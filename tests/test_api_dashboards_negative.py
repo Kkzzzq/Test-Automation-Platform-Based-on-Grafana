@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import allure
 import pytest
 
+from config import settings
 from helpers.schemas.dashboards_schema import GetDashboardsWithIncorrectCredentialsSchema
-from helpers.schemas.user_schema import Get404DashboardSchema, GetDashboardWithLowAccessSchema
+from helpers.schemas.user_schema import (
+    Get404DashboardSchema,
+    GetDashboardWithLowAccessSchema,
+)
 from services.api_dashboards_service import ApiDashboardsService
 from services.utils import assert_json_response, validate_status_code_and_body
 
 pytestmark = pytest.mark.usefixtures("session_resources")
 
 BAD_AUTH_CASES = [
-    pytest.param(("admin2", "admin2"), id="wrong-user-and-password"),
-    pytest.param(("admin", "wrong-password"), id="wrong-password"),
-    pytest.param(("wrong-user", "admin"), id="wrong-user"),
+    pytest.param(("wrong-admin", "wrong-password"), id="wrong-user-and-password"),
+    pytest.param((settings.BASIC_AUTH[0], "wrong-password"), id="wrong-password"),
+    pytest.param(("wrong-user", settings.BASIC_AUTH[1]), id="wrong-user"),
 ]
 
 BAD_UID_SUFFIXES = [
@@ -43,7 +49,7 @@ def test_get_dashboard_with_incorrect_auth(auth, test_context):
 def test_get_dashboard_with_low_level_access(test_context):
     response = ApiDashboardsService.get_dashboard(
         dashboard_uid=test_context.dashboards.dashboard_uid,
-        auth=("LowAccess", "test"),
+        auth=settings.LOW_ACCESS,
     )
     validate_status_code_and_body(response, GetDashboardWithLowAccessSchema, 403)
     assert_json_response(response)
