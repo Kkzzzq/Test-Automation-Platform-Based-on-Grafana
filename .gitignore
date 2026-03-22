@@ -1,28 +1,31 @@
-# Script summarize for prject
-/python_summary/
+# IDE
+.idea/
+.vscode/
 
-#src file in CypressTests
-/Main.ts
-
-/.idea/
-# Python cache folders
-PythonTests/__pycache__
-PythonTests/services/__pycache__
-PythonTests/tests/__pycache__
-
-#Virtual python env
+# Python cache / env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
 venv/
 
-#Python cache files
-*.pyc
+# Coverage / reports
+.coverage
+htmlcov/
+allure-results/
+allure-report/
 
-#JSONs
+# Local runtime files
+data/users.json
+data/dashboards.json
+data/organizations.json
+gh-pages/
 
-/data/dashboards.json
-/data/users.json
-/data/organizations.json
+# Local database / docker data
+*.db
+grafana-data/
 
-#Allure 
-
-/allure-results
-.env
+# OS files
+.DS_Store
+Thumbs.db
