@@ -3,16 +3,7 @@ from __future__ import annotations
 import pytest
 
 from tests.context import TestContext
-from tests.resource_manager import (
-    ensure_runtime_data_files,
-    prepare_session_resources,
-    safe_cleanup,
-)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def runtime_data_files():
-    ensure_runtime_data_files()
+from tests.resource_manager import prepare_session_resources, safe_cleanup
 
 
 @pytest.fixture(scope="session")
