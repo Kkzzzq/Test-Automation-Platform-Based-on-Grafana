@@ -1,28 +1,22 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-BASE_DIR = Path(
-    os.getenv(
-        "GITHUB_WORKSPACE",
-        str(Path(__file__).resolve().parent.parent),
-    )
-)
-
+BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 
-DEFAULT_DB_PATH = "/var/lib/grafana/grafana.db"
+# 唯一运行标准：只支持 Docker Compose
+DB_PATH = "/var/lib/grafana/grafana.db"
+BASE_URL = "http://grafana:3000"
 
-DB_PATH = os.getenv("GRAFANA_DB_PATH", DEFAULT_DB_PATH)
-BASE_URL = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
-
-GRAFANA_ADMIN_USER = os.getenv("GRAFANA_ADMIN_USER", "admin")
-GRAFANA_ADMIN_PASSWORD = os.getenv("GRAFANA_ADMIN_PASSWORD", "admin")
+# 固定管理员账号
+GRAFANA_ADMIN_USER = "admin"
+GRAFANA_ADMIN_PASSWORD = "admin"
 BASIC_AUTH = (GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD)
 
-GRAFANA_LOW_ACCESS_USER = os.getenv("GRAFANA_LOW_ACCESS_USER", "LowAccess")
-GRAFANA_LOW_ACCESS_PASSWORD = os.getenv("GRAFANA_LOW_ACCESS_PASSWORD", "test")
+# 固定低权限账号
+GRAFANA_LOW_ACCESS_USER = "LowAccess"
+GRAFANA_LOW_ACCESS_PASSWORD = "test"
 LOW_ACCESS = (GRAFANA_LOW_ACCESS_USER, GRAFANA_LOW_ACCESS_PASSWORD)
 
 USERS_PATH = str(DATA_DIR / "users.json")
