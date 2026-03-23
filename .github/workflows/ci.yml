@@ -1,6 +1,8 @@
 name: Run PyTests
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -9,11 +11,6 @@ permissions:
 jobs:
   run-tests:
     runs-on: ubuntu-latest
-    env:
-      GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
-      GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-      GRAFANA_LOW_ACCESS_USER: ${{ secrets.GRAFANA_LOW_ACCESS_USER }}
-      GRAFANA_LOW_ACCESS_PASSWORD: ${{ secrets.GRAFANA_LOW_ACCESS_PASSWORD }}
 
     steps:
       - name: Checkout code
@@ -36,42 +33,22 @@ jobs:
           docker compose down -v --remove-orphans || true
           rm -rf allure-results allure-report || true
 
-      - name: Build test-runner
-        run: docker compose build test-runner
+      - name: Run tests with Docker Compose
+        run: docker compose up --build --abort-on-container-exit --exit-code-from test-runner
 
-      - name: Start Grafana
-        run: docker compose up -d grafana
-
-      - name: Wait for Grafana health
-        run: |
-          for i in {1..30}; do
-            response=$(curl -s http://localhost:3000/api/health || true)
-            echo "$response"
-            if echo "$response" | grep -q '"database":"ok"'; then
-              exit 0
-            fi
-            sleep 5
-          done
-
-          docker compose logs grafana
-          exit 1
-
-      - name: Run pytest in test-runner
-        run: docker compose run --rm test-runner
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs
 
       - name: Generate Allure report
         if: always()
         run: |
-          if [ -d allure-results ] && [ "$(ls -A allure-results)" ]; then
+          if [ -d allure-results ] && [ "$(ls -A allure-results 2>/dev/null)" ]; then
             allure generate allure-results -o allure-report --clean
           else
             mkdir -p allure-report
             cat <<'EOF' > allure-report/index.html
-            <html>
-              <body>
-                <h1>No allure results generated</h1>
-              </body>
-            </html>
+            <h1>No allure results generated</h1>
             EOF
           fi
 
@@ -83,7 +60,7 @@ jobs:
           path: allure-report
 
       - name: Publish Allure report to GitHub Pages
-        if: always()
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
