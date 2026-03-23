@@ -10,6 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x /app/scripts/run_tests.sh
-
-CMD ["/bin/sh", "/app/scripts/run_tests.sh"]
+CMD ["pytest", "/app/tests", "--alluredir=/app/allure-results"]
