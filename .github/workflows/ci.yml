@@ -45,9 +45,7 @@ jobs:
             allure generate allure-results -o allure-report --clean
           else
             mkdir -p allure-report
-            cat <<'EOF' > allure-report/index.html
-            <h1>No allure results generated</h1>
-            EOF
+            printf '%s\n' '<html><body><h1>No allure results generated</h1></body></html>' > allure-report/index.html
           fi
 
       - name: Upload Allure report artifact
