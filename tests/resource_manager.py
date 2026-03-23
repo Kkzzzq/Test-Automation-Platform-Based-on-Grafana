@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 import logging
-
 from data.organizations_data import make_test_organization_body
 from data.users_credentials import (
     existing_credentials,
