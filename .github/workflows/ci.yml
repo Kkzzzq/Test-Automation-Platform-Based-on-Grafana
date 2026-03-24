@@ -1,15 +1,21 @@
-name: Run PyTests
+name: Run Tests
 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run-tests:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,9 +27,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y default-jre wget
-          wget https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz
-          tar -zxf allure-2.27.0.tgz
-          sudo mv allure-2.27.0 /opt/allure
+          wget https://github.com/allure-framework/allure2/releases/download/2.29.0/allure-2.29.0.tgz
+          tar -zxf allure-2.29.0.tgz
+          sudo mv allure-2.29.0 /opt/allure
           sudo ln -sf /opt/allure/bin/allure /usr/local/bin/allure
 
       - name: Cleanup previous containers and reports
@@ -45,7 +51,7 @@ jobs:
             allure generate allure-results -o allure-report --clean
           else
             mkdir -p allure-report
-            printf '%s\n' '<html><body><h1>No allure results generated</h1></body></html>' > allure-report/index.html
+            printf '%s\n' '# No allure results generated' > allure-report/index.html
           fi
 
       - name: Upload Allure report artifact
@@ -54,6 +60,13 @@ jobs:
         with:
           name: allure-report
           path: allure-report
+
+      - name: Upload Allure raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
 
       - name: Publish Allure report to GitHub Pages
         if: always() && github.ref == 'refs/heads/main'
