@@ -60,6 +60,15 @@ class ResourceManager:
         except Exception as exc:  # noqa: BLE001
             logging.warning("Failed to pre-delete user %s: %s", login, exc)
 
+    @staticmethod
+    def _reversed_unique(values):
+        seen = set()
+        for value in reversed(values):
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            yield value
+
     @classmethod
     def prepare_environment(cls) -> TestContext:
         context = TestContext()
@@ -161,25 +170,25 @@ class ResourceManager:
     def cleanup_environment(cls) -> None:
         context = cls._context
 
+        tracked_share_tokens = list(context.dashboard_hub.share_tokens)
         if context.dashboard_hub.share_token:
-            try:
-                DashboardHubService.delete_share_link(context.dashboard_hub.share_token)
-            except Exception as exc:  # noqa: BLE001
-                logging.warning(
-                    "Failed to delete share link %s: %s",
-                    context.dashboard_hub.share_token,
-                    exc,
-                )
+            tracked_share_tokens.append(context.dashboard_hub.share_token)
 
-        if context.dashboard_hub.subscription_id:
+        for token in cls._reversed_unique(tracked_share_tokens):
             try:
-                DashboardHubService.delete_subscription(context.dashboard_hub.subscription_id)
+                DashboardHubService.delete_share_link(token)
             except Exception as exc:  # noqa: BLE001
-                logging.warning(
-                    "Failed to delete subscription %s: %s",
-                    context.dashboard_hub.subscription_id,
-                    exc,
-                )
+                logging.warning("Failed to delete share link %s: %s", token, exc)
+
+        tracked_subscription_ids = list(context.dashboard_hub.subscription_ids)
+        if context.dashboard_hub.subscription_id:
+            tracked_subscription_ids.append(context.dashboard_hub.subscription_id)
+
+        for subscription_id in cls._reversed_unique(tracked_subscription_ids):
+            try:
+                DashboardHubService.delete_subscription(subscription_id)
+            except Exception as exc:  # noqa: BLE001
+                logging.warning("Failed to delete subscription %s: %s", subscription_id, exc)
 
         if context.dashboards.dashboard_uid:
             try:
