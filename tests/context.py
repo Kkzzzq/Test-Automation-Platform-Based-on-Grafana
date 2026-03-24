@@ -105,6 +105,14 @@ class TestContext:
         self.users.low_access_user_login = value
 
     @property
+    def organizations_user_id(self) -> int | None:
+        return self.users.organizations_user_id
+
+    @organizations_user_id.setter
+    def organizations_user_id(self, value: int | None) -> None:
+        self.users.organizations_user_id = value
+
+    @property
     def subscription_id(self) -> int | None:
         return self.dashboard_hub.subscription_id
 
