@@ -1,124 +1,69 @@
 from __future__ import annotations
 
-import logging
-
-from data.organizations_data import make_test_organization_body
-from data.users_credentials import (
-    existing_credentials,
-    low_access_credentials,
-    organizations_user,
-)
-from helpers.schemas.organizations_schema import CreateOrganizationSchema
+from data.organizations_data import make_organization_body
+from data.users_credentials import make_user_credentials
 from services.api_dashboards_service import ApiDashboardsService
 from services.api_organizations_service import ApiOrganizationsService
 from services.api_users_service import ApiUsersService
-from services.utils import validate_status_code_and_body
 from tests.context import TestContext
 
 
-def _delete_user_by_login_if_exists(login: str) -> None:
-    try:
-        user_id = ApiUsersService.find_user_by_login(login)
-        if user_id:
-            ApiUsersService.delete_api_user(user_id)
-            logging.info("Deleted leftover user before setup: %s (id=%s)", login, user_id)
-    except Exception as exc:
-        logging.warning("Failed to delete leftover user %s before setup: %s", login, exc)
+class ResourceManager:
+    _context = TestContext()
 
+    @classmethod
+    def prepare_environment(cls) -> TestContext:
+        context = TestContext()
 
-def _cleanup_known_users_before_setup() -> None:
-    for login in [
-        low_access_credentials["login"],
-        organizations_user["login"],
-        existing_credentials["login"],
-    ]:
-        _delete_user_by_login_if_exists(login)
+        org_response, org_id = ApiOrganizationsService.create_new_organization(make_organization_body())
+        if org_response.ok:
+            context.org_id = org_id
 
+        folder_response, folder_uid = ApiDashboardsService.create_folder()
+        if folder_response.ok:
+            context.folder_uid = folder_uid
 
-def prepare_session_resources(test_context: TestContext) -> TestContext:
-    _cleanup_known_users_before_setup()
+        if context.folder_uid:
+            dashboard_response, dashboard_uid = ApiDashboardsService.create_dashboard(context.folder_uid)
+            if dashboard_response.ok:
+                context.dashboard_uid = dashboard_uid
 
-    try:
-        organization_body = make_test_organization_body()
+        existing_user = make_user_credentials("existing_user")
+        existing_response, existing_user_id = ApiUsersService.create_api_user(existing_user)
+        if existing_response.ok:
+            context.existing_user_id = existing_user_id
+            context.existing_user_login = existing_user["login"]
+            context.existing_user_email = existing_user["email"]
 
-        response, org_id = ApiOrganizationsService.create_new_organization(
-            body=organization_body
-        )
-        validate_status_code_and_body(response, CreateOrganizationSchema, 200)
+        low_user = make_user_credentials("low_access_user")
+        low_user["login"] = "LowAccess"
+        low_user["email"] = "low_access_user@example.com"
+        low_user["password"] = "test"
+        low_response, low_id = ApiUsersService.create_api_user(low_user)
+        if low_response.ok:
+            context.low_access_user_id = low_id
+            context.low_access_user_login = low_user["login"]
 
-        test_context.organizations.org_id = int(org_id)
-        test_context.organizations.org_name = organization_body["name"]
+        cls._context = context
+        return context
 
-        response, folder_uid = ApiDashboardsService.create_folder()
-        assert response.status_code == 200, f"Create folder failed: {response.text}"
-        test_context.dashboards.folder_uid = folder_uid
+    @classmethod
+    def get_context(cls) -> TestContext:
+        if not cls._context.dashboard_uid:
+            cls.prepare_environment()
+        return cls._context
 
-        response, dashboard_uid = ApiDashboardsService.create_dashboard(
-            folder_uid=folder_uid
-        )
-        assert response.status_code == 200, f"Create dashboard failed: {response.text}"
-        test_context.dashboards.dashboard_uid = dashboard_uid
-
-        response, low_access_user_id = ApiUsersService.create_api_user(
-            low_access_credentials
-        )
-        assert response.status_code == 200, f"Create low-access user failed: {response.text}"
-        test_context.users.low_access_user_id = low_access_user_id
-
-        try:
-            ApiOrganizationsService.delete_user_from_org(userid=low_access_user_id)
-        except Exception as exc:
-            logging.warning(
-                "Failed to remove low-access user %s from default org: %s",
-                low_access_user_id,
-                exc,
-            )
-
-        response, org_user_id = ApiUsersService.create_api_user(organizations_user)
-        assert response.status_code == 200, f"Create organization user failed: {response.text}"
-        test_context.users.organizations_user_id = org_user_id
-
-        response, existing_user_id = ApiUsersService.create_api_user(existing_credentials)
-        assert response.status_code == 200, f"Create existing user failed: {response.text}"
-        test_context.users.existing_user_id = existing_user_id
-
-        return test_context
-
-    except Exception:
-        safe_cleanup(test_context)
-        raise
-
-
-def safe_cleanup(test_context: TestContext) -> None:
-    for user_id in [
-        test_context.users.existing_user_id,
-        test_context.users.low_access_user_id,
-        test_context.users.organizations_user_id,
-    ]:
-        try:
-            if user_id:
-                ApiUsersService.delete_api_user(user_id)
-        except Exception as exc:
-            logging.warning("Cleanup user %s failed: %s", user_id, exc)
-
-    try:
-        if test_context.dashboards.dashboard_uid:
-            ApiDashboardsService.delete_dashboard(test_context.dashboards.dashboard_uid)
-    except Exception as exc:
-        logging.warning("Cleanup dashboard failed: %s", exc)
-
-    try:
-        if test_context.dashboards.folder_uid:
-            ApiDashboardsService.delete_folder_for_dashboard(
-                test_context.dashboards.folder_uid
-            )
-    except Exception as exc:
-        logging.warning("Cleanup folder failed: %s", exc)
-
-    try:
-        if test_context.organizations.org_id:
-            ApiOrganizationsService.delete_organization(
-                test_context.organizations.org_id
-            )
-    except Exception as exc:
-        logging.warning("Cleanup organization failed: %s", exc)
+    @classmethod
+    def cleanup_environment(cls):
+        context = cls._context
+        if context.dashboard_uid:
+            ApiDashboardsService.delete_dashboard_by_uid(context.dashboard_uid)
+        if context.folder_uid:
+            ApiDashboardsService.delete_folder(context.folder_uid)
+        if context.existing_user_id:
+            ApiUsersService.delete_api_user(context.existing_user_id)
+        if context.low_access_user_id:
+            ApiUsersService.delete_api_user(context.low_access_user_id)
+        if context.org_id:
+            ApiOrganizationsService.delete_organization(context.org_id)
+        cls._context = TestContext()
