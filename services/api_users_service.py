@@ -1,94 +1,47 @@
-import logging
+from __future__ import annotations
 
-import requests
 from requests import Response
 
 import config.settings as settings
 from data.users_credentials import change_password
 from helpers.decorators import api_error_handler, retry
+from services.http_client import HttpClient
 from services.utils import total_log_in_method
 
 
 class ApiUsersService:
+    client = HttpClient(settings.GRAFANA_BASE_URL, auth=settings.BASIC_AUTH)
+
     @staticmethod
     @api_error_handler
     @retry(attempts=3)
     def create_api_user(credentials: dict, auth: tuple[str, str] | None = None) -> tuple[Response, int | None]:
-        url = f"{settings.BASE_URL}/api/admin/users"
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(
-            url,
+        response = ApiUsersService.client.request(
+            "POST",
+            "/api/admin/users",
             auth=auth or settings.BASIC_AUTH,
             json=credentials,
-            headers=headers,
-            timeout=10,
+            headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
         return response, response.json().get("id")
 
     @staticmethod
     @api_error_handler
-    @retry(attempts=3)
-    def find_user_by_login(login: str, auth: tuple[str, str] | None = None) -> int | None:
-        url = f"{settings.BASE_URL}/api/users/lookup?loginOrEmail={login}"
-        headers = {"Content-Type": "application/json"}
-        response = requests.get(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            headers=headers,
-            timeout=10,
-        )
-        total_log_in_method(response)
-        return response.json().get("id")
-
-    @staticmethod
-    @api_error_handler
-    @retry(attempts=3)
-    def delete_api_user(userid: int, auth: tuple[str, str] | None = None) -> Response | None:
-        url = f"{settings.BASE_URL}/api/admin/users/{userid}"
-        response = requests.delete(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            timeout=10,
-        )
-        total_log_in_method(response)
-        if response.status_code == 404:
-            logging.warning(f"User {userid} already deleted. Skipping deletion")
-            return None
-        return response
-
-    @staticmethod
-    @api_error_handler
-    @retry(attempts=3)
-    def create_bad_request(payload: dict | None = None, auth: tuple[str, str] | None = None) -> Response:
-        url = f"{settings.BASE_URL}/api/admin/users"
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            json=payload or {},
-            headers=headers,
-            timeout=10,
-        )
+    def delete_api_user(user_id: int, auth: tuple[str, str] | None = None) -> Response:
+        response = ApiUsersService.client.request("DELETE", f"/api/admin/users/{user_id}", auth=auth or settings.BASIC_AUTH)
         total_log_in_method(response)
         return response
 
     @staticmethod
     @api_error_handler
-    @retry(attempts=3)
-    def change_user_password(
-        userid: int,
-        payload: dict | None = None,
-        auth: tuple[str, str] | None = None,
-    ) -> Response:
-        url = f"{settings.BASE_URL}/api/admin/users/{userid}/password"
-        headers = {"Content-Type": "application/json"}
-        response = requests.put(
-            url,
+    def change_user_password(auth: tuple[str, str] | None = None, body: dict | None = None) -> Response:
+        response = ApiUsersService.client.request(
+            "PUT",
+            "/api/user/password",
             auth=auth or settings.BASIC_AUTH,
-            json=payload or change_password,
-            headers=headers,
-            timeout=10,
+            json=body or change_password,
+            headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
         return response

@@ -1,26 +1,25 @@
-import logging
-
-import requests
+from __future__ import annotations
 
 import config.settings as settings
 import data.dashboards_data as data
 from helpers.decorators import api_error_handler, retry
+from services.http_client import HttpClient
 from services.utils import total_log_in_method
 
 
 class ApiDashboardsService:
+    client = HttpClient(settings.GRAFANA_BASE_URL, auth=settings.BASIC_AUTH)
+
     @staticmethod
     @api_error_handler
     @retry(attempts=3)
     def create_folder(body: dict | None = None, auth: tuple[str, str] | None = None):
-        url = f"{settings.BASE_URL}/api/folders"
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(
-            url,
+        response = ApiDashboardsService.client.request(
+            "POST",
+            "/api/folders",
             auth=auth or settings.BASIC_AUTH,
             json=body or data.body_for_create_folder,
-            headers=headers,
-            timeout=10,
+            headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
         return response, response.json().get("uid")
@@ -28,73 +27,34 @@ class ApiDashboardsService:
     @staticmethod
     @api_error_handler
     @retry(attempts=3)
-    def create_dashboard(
-        folder_uid: str,
-        body: dict | None = None,
-        auth: tuple[str, str] | None = None,
-    ):
-        url = f"{settings.BASE_URL}/api/dashboards/db"
-        headers = {"Content-Type": "application/json"}
-        payload = body or data.get_body_for_create_dashboard(folder_uid)
-        response = requests.post(
-            url,
+    def create_dashboard(folder_uid: str, body: dict | None = None, auth: tuple[str, str] | None = None):
+        response = ApiDashboardsService.client.request(
+            "POST",
+            "/api/dashboards/db",
             auth=auth or settings.BASIC_AUTH,
-            json=payload,
-            headers=headers,
-            timeout=10,
+            json=body or data.get_body_for_create_dashboard(folder_uid),
+            headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
         return response, response.json().get("uid")
 
     @staticmethod
     @api_error_handler
-    @retry(attempts=3)
-    def get_dashboard(dashboard_uid: str, auth: tuple[str, str] | None = None):
-        url = f"{settings.BASE_URL}/api/dashboards/uid/{dashboard_uid}"
-        headers = {"Content-Type": "application/json"}
-        response = requests.get(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            headers=headers,
-            timeout=10,
-        )
+    def get_dashboard_by_uid(uid: str, auth: tuple[str, str] | None = None):
+        response = ApiDashboardsService.client.request("GET", f"/api/dashboards/uid/{uid}", auth=auth or settings.BASIC_AUTH)
         total_log_in_method(response)
         return response
 
     @staticmethod
     @api_error_handler
-    @retry(attempts=3)
-    def delete_dashboard(dashboard_uid: str, auth: tuple[str, str] | None = None):
-        url = f"{settings.BASE_URL}/api/dashboards/uid/{dashboard_uid}"
-        headers = {"Content-Type": "application/json"}
-        response = requests.delete(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            headers=headers,
-            timeout=10,
-        )
+    def delete_dashboard_by_uid(uid: str, auth: tuple[str, str] | None = None):
+        response = ApiDashboardsService.client.request("DELETE", f"/api/dashboards/uid/{uid}", auth=auth or settings.BASIC_AUTH)
         total_log_in_method(response)
-
-        if response.status_code == 404:
-            logging.warning(f"Dashboard {dashboard_uid} already deleted")
-            return None
         return response
 
     @staticmethod
     @api_error_handler
-    @retry(attempts=3)
-    def delete_folder_for_dashboard(folder_uid: str, auth: tuple[str, str] | None = None):
-        url = f"{settings.BASE_URL}/api/folders/{folder_uid}"
-        headers = {"Content-Type": "application/json"}
-        response = requests.delete(
-            url,
-            auth=auth or settings.BASIC_AUTH,
-            headers=headers,
-            timeout=10,
-        )
+    def delete_folder(uid: str, auth: tuple[str, str] | None = None):
+        response = ApiDashboardsService.client.request("DELETE", f"/api/folders/{uid}", auth=auth or settings.BASIC_AUTH)
         total_log_in_method(response)
-
-        if response.status_code == 404:
-            logging.warning(f"Folder {folder_uid} already deleted")
-            return None
         return response
