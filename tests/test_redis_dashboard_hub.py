@@ -14,7 +14,8 @@ def test_subscriptions_are_cached_and_invalidated(session_context):
     )
     create_response, subscription_id = DashboardHubService.create_subscription(**payload)
     assert create_response.status_code == 201
-    session_context.subscription_id = subscription_id
+
+    session_context.register_subscription(subscription_id)
 
     list_response = DashboardHubService.list_subscriptions(session_context.dashboard_uid)
     assert list_response.status_code == 200
@@ -26,7 +27,8 @@ def test_subscriptions_are_cached_and_invalidated(session_context):
 
     delete_response = DashboardHubService.delete_subscription(subscription_id)
     assert delete_response.status_code == 200
-    session_context.subscription_id = None
+
+    session_context.forget_subscription(subscription_id)
 
     assert RedisService.exists(key) is False
 
@@ -37,7 +39,8 @@ def test_share_link_is_cached_and_invalidated(session_context):
         **make_share_link_payload(session_context.dashboard_uid)
     )
     assert create_response.status_code == 201
-    session_context.share_token = token
+
+    session_context.register_share_token(token)
 
     response = DashboardHubService.get_share_link(token)
     assert response.status_code == 200
@@ -49,6 +52,7 @@ def test_share_link_is_cached_and_invalidated(session_context):
 
     delete_response = DashboardHubService.delete_share_link(token)
     assert delete_response.status_code == 200
-    session_context.share_token = None
+
+    session_context.forget_share_token(token)
 
     assert RedisService.exists(key) is False
