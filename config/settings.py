@@ -19,7 +19,12 @@ GRAFANA_LOW_ACCESS_USER = os.getenv("GRAFANA_LOW_ACCESS_USER", "LowAccess")
 GRAFANA_LOW_ACCESS_PASSWORD = os.getenv("GRAFANA_LOW_ACCESS_PASSWORD", "test")
 LOW_ACCESS = (GRAFANA_LOW_ACCESS_USER, GRAFANA_LOW_ACCESS_PASSWORD)
 
-DB_PATH = os.getenv("DB_PATH", "/var/lib/grafana/grafana.db")
+# Grafana 内部 SQLite，仅用于测试校验
+GRAFANA_SQLITE_PATH = os.getenv(
+    "GRAFANA_SQLITE_PATH",
+    os.getenv("DB_PATH", "/var/lib/grafana/grafana.db"),
+)
+DB_PATH = GRAFANA_SQLITE_PATH  # backward compatibility
 
 # Dashboard Hub
 DASHBOARD_HUB_BASE_URL = os.getenv("DASHBOARD_HUB_BASE_URL", "http://dashboard-hub:8000")
