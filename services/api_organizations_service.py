@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
+from requests import Response
+
 import config.settings as settings
-from data.organizations_data import make_add_user_body, make_organization_body
+from data.organizations_data import add_in_organizations_body, test_organizations_body
 from helpers.decorators import api_error_handler, retry
 from services.http_client import HttpClient
-from services.utils import total_log_in_method
+from services.utils import safe_json, total_log_in_method
 
 
 class ApiOrganizationsService:
@@ -13,25 +17,76 @@ class ApiOrganizationsService:
     @staticmethod
     @api_error_handler
     @retry(attempts=3)
-    def create_new_organization(body: dict | None = None, auth: tuple[str, str] | None = None):
+    def create_new_organization(
+        body: dict | None = None,
+        auth: tuple[str, str] | None = None,
+    ) -> tuple[Response, int | None]:
         response = ApiOrganizationsService.client.request(
             "POST",
             "/api/orgs",
             auth=auth or settings.BASIC_AUTH,
-            json=body or make_organization_body(),
+            json=body or test_organizations_body,
             headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
-        return response, response.json().get("orgId")
+        return response, safe_json(response).get("orgId")
 
     @staticmethod
     @api_error_handler
-    def add_user_to_organization(org_id: int, login_or_email: str, role: str = "Viewer", auth: tuple[str, str] | None = None):
+    @retry(attempts=3)
+    def add_user_in_organization(
+        org_id: int,
+        body: dict | None = None,
+        auth: tuple[str, str] | None = None,
+    ) -> tuple[Response, int | None]:
         response = ApiOrganizationsService.client.request(
             "POST",
             f"/api/orgs/{org_id}/users",
             auth=auth or settings.BASIC_AUTH,
-            json=make_add_user_body(login_or_email, role),
+            json=body or add_in_organizations_body,
+            headers={"Content-Type": "application/json"},
+        )
+        total_log_in_method(response)
+        return response, safe_json(response).get("userId")
+
+    @staticmethod
+    @api_error_handler
+    @retry(attempts=3)
+    def get_organizations_by_id(org_id: int, auth: tuple[str, str] | None = None) -> Response:
+        response = ApiOrganizationsService.client.request(
+            "GET",
+            f"/api/orgs/{org_id}",
+            auth=auth or settings.BASIC_AUTH,
+        )
+        total_log_in_method(response)
+        return response
+
+    @staticmethod
+    @api_error_handler
+    @retry(attempts=3)
+    def get_users_in_organization(org_id: int, auth: tuple[str, str] | None = None) -> Response:
+        response = ApiOrganizationsService.client.request(
+            "GET",
+            f"/api/orgs/{org_id}/users",
+            auth=auth or settings.BASIC_AUTH,
+        )
+        total_log_in_method(response)
+        return response
+
+    @staticmethod
+    @api_error_handler
+    @retry(attempts=3)
+    def update_user_in_org(
+        org_id: int,
+        user_id: int,
+        role: str = "Admin",
+        auth: tuple[str, str] | None = None,
+    ) -> Response:
+        response = ApiOrganizationsService.client.request(
+            "PATCH",
+            f"/api/orgs/{org_id}/users/{user_id}",
+            auth=auth or settings.BASIC_AUTH,
+            json={"role": role},
             headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
@@ -39,7 +94,36 @@ class ApiOrganizationsService:
 
     @staticmethod
     @api_error_handler
-    def delete_organization(org_id: int, auth: tuple[str, str] | None = None):
-        response = ApiOrganizationsService.client.request("DELETE", f"/api/orgs/{org_id}", auth=auth or settings.BASIC_AUTH)
+    @retry(attempts=3)
+    def delete_user_from_org(
+        orgid: int = 1,
+        userid: int | None = None,
+        auth: tuple[str, str] | None = None,
+    ) -> Response | None:
+        if userid is None:
+            raise ValueError("userid must be provided")
+        response = ApiOrganizationsService.client.request(
+            "DELETE",
+            f"/api/orgs/{orgid}/users/{userid}",
+            auth=auth or settings.BASIC_AUTH,
+        )
         total_log_in_method(response)
+        if response.status_code == 404:
+            logging.warning("User %s already removed from org %s", userid, orgid)
+            return None
+        return response
+
+    @staticmethod
+    @api_error_handler
+    @retry(attempts=3)
+    def delete_organization(org_id: int, auth: tuple[str, str] | None = None) -> Response | None:
+        response = ApiOrganizationsService.client.request(
+            "DELETE",
+            f"/api/orgs/{org_id}",
+            auth=auth or settings.BASIC_AUTH,
+        )
+        total_log_in_method(response)
+        if response.status_code == 404:
+            logging.warning("Organization %s already deleted", org_id)
+            return None
         return response
