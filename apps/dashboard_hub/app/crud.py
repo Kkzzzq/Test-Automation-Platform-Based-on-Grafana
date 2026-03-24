@@ -59,6 +59,15 @@ def _is_expired(expire_at: datetime | None) -> bool:
     return expire_at < datetime.now(timezone.utc)
 
 
+def _parse_expire_at(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def create_subscription(db: Session, dashboard_uid: str, user_login: str, channel: str, cron: str):
     subscription = Subscription(
         dashboard_uid=dashboard_uid,
@@ -128,6 +137,7 @@ def create_share_link(db: Session, dashboard_uid: str, expire_at: datetime | Non
     db.add(share_link)
     db.commit()
     db.refresh(share_link)
+
     cache.set_json(
         f"dashhub:share:{token}",
         _share_link_payload(share_link),
@@ -139,6 +149,27 @@ def create_share_link(db: Session, dashboard_uid: str, expire_at: datetime | Non
 def get_share_link(db: Session, token: str):
     cache_key = f"dashhub:share:{token}"
     cached = cache.get_json(cache_key)
+
+    if cached:
+        expire_at = _parse_expire_at(cached.get("expire_at"))
+        if _is_expired(expire_at):
+            cache.delete(cache_key)
+            return "expired"
+
+        updated_rows = (
+            db.query(ShareLink)
+            .filter(ShareLink.token == token)
+            .update({ShareLink.view_count: ShareLink.view_count + 1}, synchronize_session=False)
+        )
+        db.commit()
+
+        if updated_rows == 0:
+            cache.delete(cache_key)
+            return None
+
+        cached["view_count"] = int(cached.get("view_count", 0)) + 1
+        cache.set_json(cache_key, cached, ex=CACHE_TTL_SECONDS)
+        return cached
 
     row = db.query(ShareLink).filter(ShareLink.token == token).first()
     if not row:
@@ -155,7 +186,6 @@ def get_share_link(db: Session, token: str):
 
     payload = _share_link_payload(row)
     cache.set_json(cache_key, payload, ex=CACHE_TTL_SECONDS)
-
     return payload
 
 
