@@ -29,6 +29,8 @@ class UsersContext:
 class DashboardHubContext:
     subscription_id: int | None = None
     share_token: str | None = None
+    subscription_ids: list[int] = field(default_factory=list)
+    share_tokens: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +111,8 @@ class TestContext:
     @subscription_id.setter
     def subscription_id(self, value: int | None) -> None:
         self.dashboard_hub.subscription_id = value
+        if isinstance(value, int) and value not in self.dashboard_hub.subscription_ids:
+            self.dashboard_hub.subscription_ids.append(value)
 
     @property
     def share_token(self) -> str | None:
@@ -117,6 +121,34 @@ class TestContext:
     @share_token.setter
     def share_token(self, value: str | None) -> None:
         self.dashboard_hub.share_token = value
+        if isinstance(value, str) and value and value not in self.dashboard_hub.share_tokens:
+            self.dashboard_hub.share_tokens.append(value)
+
+    def register_subscription(self, subscription_id: int | None) -> None:
+        if subscription_id is not None:
+            self.subscription_id = subscription_id
+
+    def register_share_token(self, token: str | None) -> None:
+        if token:
+            self.share_token = token
+
+    def forget_subscription(self, subscription_id: int | None) -> None:
+        if subscription_id is None:
+            return
+        self.dashboard_hub.subscription_ids = [
+            item for item in self.dashboard_hub.subscription_ids if item != subscription_id
+        ]
+        if self.dashboard_hub.subscription_id == subscription_id:
+            self.dashboard_hub.subscription_id = None
+
+    def forget_share_token(self, token: str | None) -> None:
+        if not token:
+            return
+        self.dashboard_hub.share_tokens = [
+            item for item in self.dashboard_hub.share_tokens if item != token
+        ]
+        if self.dashboard_hub.share_token == token:
+            self.dashboard_hub.share_token = None
 
     def to_dict(self) -> dict:
         return asdict(self)
