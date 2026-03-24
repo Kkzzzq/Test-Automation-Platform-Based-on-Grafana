@@ -75,7 +75,20 @@ class DashboardHubService:
     @staticmethod
     @api_error_handler
     def get_share_link(token: str) -> Response:
-        response = DashboardHubService.client.request("GET", f"/api/v1/share-links/{token}")
+        response = DashboardHubService.client.request(
+            "GET",
+            f"/api/v1/share-links/{token}",
+        )
+        total_log_in_method(response)
+        return response
+
+    @staticmethod
+    @api_error_handler
+    def delete_share_link(token: str) -> Response:
+        response = DashboardHubService.client.request(
+            "DELETE",
+            f"/api/v1/share-links/{token}",
+        )
         total_log_in_method(response)
         return response
 
