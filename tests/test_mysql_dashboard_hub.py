@@ -14,7 +14,8 @@ def test_subscription_written_to_mysql(session_context):
     )
     response, subscription_id = DashboardHubService.create_subscription(**payload)
     assert response.status_code == 201
-    session_context.subscription_id = subscription_id
+
+    session_context.register_subscription(subscription_id)
 
     row = MySQLService.fetch_subscription_by_id(subscription_id)
     assert row is not None
@@ -24,7 +25,8 @@ def test_subscription_written_to_mysql(session_context):
 
     delete_response = DashboardHubService.delete_subscription(subscription_id)
     assert delete_response.status_code == 200
-    session_context.subscription_id = None
+
+    session_context.forget_subscription(subscription_id)
 
     deleted_row = MySQLService.fetch_subscription_by_id(subscription_id)
     assert deleted_row is None
@@ -35,7 +37,8 @@ def test_share_link_written_to_mysql_and_view_count_updated(session_context):
     payload = make_share_link_payload(session_context.dashboard_uid)
     response, token = DashboardHubService.create_share_link(**payload)
     assert response.status_code == 201
-    session_context.share_token = token
+
+    session_context.register_share_token(token)
 
     row = MySQLService.fetch_share_link_by_token(token)
     assert row is not None
@@ -48,3 +51,8 @@ def test_share_link_written_to_mysql_and_view_count_updated(session_context):
     updated_row = MySQLService.fetch_share_link_by_token(token)
     assert updated_row is not None
     assert updated_row["view_count"] >= 1
+
+    delete_response = DashboardHubService.delete_share_link(token)
+    assert delete_response.status_code == 200
+
+    session_context.forget_share_token(token)
