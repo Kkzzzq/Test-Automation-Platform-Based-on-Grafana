@@ -1,31 +1,6 @@
-# IDE
-.idea/
-.vscode/
-
-# Python cache / env
 __pycache__/
-*.py[cod]
+*.pyc
 .pytest_cache/
-.mypy_cache/
-.venv/
-venv/
-
-# Coverage / reports
-.coverage
-htmlcov/
 allure-results/
 allure-report/
-
-# Local runtime files
-data/users.json
-data/dashboards.json
-data/organizations.json
-gh-pages/
-
-# Local database / docker data
-*.db
-grafana-data/
-
-# OS files
-.DS_Store
-Thumbs.db
+.env
