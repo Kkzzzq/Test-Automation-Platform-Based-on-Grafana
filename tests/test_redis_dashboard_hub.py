@@ -1,3 +1,4 @@
+import allure
 import pytest
 
 from data.dashboard_hub_data import make_share_link_payload, make_subscription_payload
@@ -67,6 +68,28 @@ def test_dashboard_summary_is_cached(session_context):
         f"{payload['provider']}:{payload['model']}:{payload['prompt_version']}"
     )
     cached_payload = RedisService.get_json(key)
+
+    print("\n========== Cached Dashboard AI Summary ==========")
+    print(f"redis_key: {key}")
+    print(f"source: {payload['source']}")
+    print(f"ai_summary: {payload['ai_summary']}")
+    print("================================================\n")
+
+    allure.attach(
+        key,
+        name="Summary Redis Key",
+        attachment_type=allure.attachment_type.TEXT,
+    )
+    allure.attach(
+        str(cached_payload),
+        name="Cached Dashboard Summary Payload",
+        attachment_type=allure.attachment_type.JSON,
+    )
+    allure.attach(
+        cached_payload["ai_summary"],
+        name="Cached AI Summary Content",
+        attachment_type=allure.attachment_type.TEXT,
+    )
 
     assert cached_payload is not None
     assert cached_payload["dashboard_uid"] == session_context.dashboard_uid
