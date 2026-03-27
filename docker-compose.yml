@@ -60,6 +60,16 @@ services:
       REDIS_PORT: 6379
       REDIS_DB: 0
       CACHE_TTL_SECONDS: 120
+
+      AI_ENABLED: "true"
+      AI_PROVIDER: deepseek
+      AI_BASE_URL: https://api.deepseek.com/v1
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: deepseek-chat
+      AI_TIMEOUT_SECONDS: 20
+      AI_PROMPT_VERSION: v1
+      AI_MAX_SUMMARY_CHARS: 80
+
     depends_on:
       grafana:
         condition: service_healthy
