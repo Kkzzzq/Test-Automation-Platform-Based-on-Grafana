@@ -24,6 +24,12 @@ AI_API_KEY = os.getenv("AI_API_KEY", "")
 AI_MODEL = os.getenv("AI_MODEL", "deepseek-chat")
 AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "20"))
 AI_PROMPT_VERSION = os.getenv("AI_PROMPT_VERSION", "v1")
-AI_MAX_SUMMARY_CHARS = int(os.getenv("AI_MAX_SUMMARY_CHARS", "80"))
+AI_MAX_SUMMARY_CHARS = int(os.getenv("AI_MAX_SUMMARY_CHARS", "120"))
+
+# 为了体现 AI，又避免 token 太大，限制最多只取前 3 个 panel
+AI_MAX_PANELS_TO_SUMMARIZE = int(os.getenv("AI_MAX_PANELS_TO_SUMMARIZE", "3"))
+
+# 每个 panel 的完整 JSON 最多保留多少字符
+AI_MAX_PANEL_JSON_CHARS = int(os.getenv("AI_MAX_PANEL_JSON_CHARS", "3000"))
 
 MYSQL_DSN = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
