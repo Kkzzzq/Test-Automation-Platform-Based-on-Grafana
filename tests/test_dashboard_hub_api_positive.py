@@ -85,6 +85,28 @@ def test_get_dashboard_summary_success(session_context):
     assert response.status_code == 200
 
     payload = response.json()
+
+    print("\n========== Dashboard AI Summary ==========")
+    print(f"dashboard_uid: {payload['dashboard_uid']}")
+    print(f"title: {payload['title']}")
+    print(f"source: {payload['source']}")
+    print(f"provider: {payload['provider']}")
+    print(f"model: {payload['model']}")
+    print(f"prompt_version: {payload['prompt_version']}")
+    print(f"ai_summary: {payload['ai_summary']}")
+    print("=========================================\n")
+
+    allure.attach(
+        str(payload),
+        name="Dashboard Summary Full Response",
+        attachment_type=allure.attachment_type.JSON,
+    )
+    allure.attach(
+        payload["ai_summary"],
+        name="AI Summary Content",
+        attachment_type=allure.attachment_type.TEXT,
+    )
+
     assert payload["dashboard_uid"] == session_context.dashboard_uid
     assert payload["title"]
     assert payload["ai_summary"]
