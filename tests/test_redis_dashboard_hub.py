@@ -29,7 +29,6 @@ def test_subscriptions_are_cached_and_invalidated(session_context):
     assert delete_response.status_code == 200
 
     session_context.forget_subscription(subscription_id)
-
     assert RedisService.exists(key) is False
 
 
@@ -54,5 +53,22 @@ def test_share_link_is_cached_and_invalidated(session_context):
     assert delete_response.status_code == 200
 
     session_context.forget_share_token(token)
-
     assert RedisService.exists(key) is False
+
+
+@pytest.mark.cache
+def test_dashboard_summary_is_cached(session_context):
+    response = DashboardHubService.get_dashboard_summary(session_context.dashboard_uid)
+    assert response.status_code == 200
+
+    payload = response.json()
+    key = (
+        f"dashhub:summary:{session_context.dashboard_uid}:"
+        f"{payload['provider']}:{payload['model']}:{payload['prompt_version']}"
+    )
+    cached_payload = RedisService.get_json(key)
+
+    assert cached_payload is not None
+    assert cached_payload["dashboard_uid"] == session_context.dashboard_uid
+    assert cached_payload["ai_summary"] == payload["ai_summary"]
+    assert cached_payload["source"] == payload["source"]
