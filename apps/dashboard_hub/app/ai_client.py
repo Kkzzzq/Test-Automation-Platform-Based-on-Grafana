@@ -42,12 +42,18 @@ class AIClient:
         *,
         title: str,
         tags: list[str],
-        panels: list[str],
+        panel_titles: list[str],
+        panel_payloads: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not self.api_key:
             raise AIClientError("AI_API_KEY is empty")
 
-        prompt = self._build_prompt(title=title, tags=tags, panels=panels)
+        prompt = self._build_prompt(
+            title=title,
+            tags=tags,
+            panel_titles=panel_titles,
+            panel_payloads=panel_payloads,
+        )
 
         response = requests.post(
             f"{self.base_url}/chat/completions",
@@ -63,8 +69,8 @@ class AIClient:
                         "role": "system",
                         "content": (
                             "你是监控平台 Dashboard 摘要助手。"
-                            "你只能根据给定信息生成一句中文摘要，"
-                            "不能编造不存在的内容。"
+                            "你会根据 dashboard 标题、标签，以及 panel 的完整配置数据生成中文摘要。"
+                            "你只能基于给定内容总结，不能编造不存在的信息。"
                         ),
                     },
                     {
@@ -92,21 +98,37 @@ class AIClient:
         }
 
     @staticmethod
-    def _build_prompt(*, title: str, tags: list[str], panels: list[str]) -> str:
+    def _build_prompt(
+        *,
+        title: str,
+        tags: list[str],
+        panel_titles: list[str],
+        panel_payloads: list[dict[str, Any]],
+    ) -> str:
         safe_title = title or "未命名 dashboard"
         safe_tags = "、".join(tags[:8]) if tags else "无"
-        safe_panels = "、".join(panels[:10]) if panels else "无"
+        safe_panel_titles = "、".join(panel_titles[:10]) if panel_titles else "无"
+
+        panel_blocks: list[str] = []
+        for index, panel in enumerate(panel_payloads, start=1):
+            panel_blocks.append(
+                f"panel_{index}:\n{panel['panel_json']}"
+            )
+
+        panel_context = "\n\n".join(panel_blocks) if panel_blocks else "无"
 
         return (
-            "请根据下面 dashboard 信息生成一句简洁摘要。\n"
-            f"要求：\n"
-            f"1. 使用中文\n"
-            f"2. 不超过 {AI_MAX_SUMMARY_CHARS} 个字\n"
-            f"3. 不要编造不存在的信息\n"
-            f"4. 尽量点出主要监控对象或指标\n\n"
+            "请根据下面 dashboard 信息生成一段中文摘要。\n"
+            "要求：\n"
+            f"1. 不超过 {AI_MAX_SUMMARY_CHARS} 个字\n"
+            "2. 不要编造不存在的信息\n"
+            "3. 优先总结 dashboard 主要关注的监控对象、指标主题和面板结构\n"
+            "4. 如果 panel 数据显示为空或没有实际监控内容，可以明确说明\n\n"
             f"title: {safe_title}\n"
             f"tags: {safe_tags}\n"
-            f"panels: {safe_panels}\n"
+            f"panel_titles: {safe_panel_titles}\n\n"
+            "下面是用于摘要的 panel 完整数据（已限制为前几个核心 panel）：\n"
+            f"{panel_context}\n"
         )
 
     @staticmethod
