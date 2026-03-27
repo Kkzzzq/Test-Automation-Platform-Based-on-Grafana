@@ -156,7 +156,7 @@ services:
             else:
                 raise SystemExit(f"{name} did not become ready in time")
         PY
-        pytest /app/tests -m "not perf" --alluredir=/app/allure-results
+        pytest -s /app/tests -m "not perf" --alluredir=/app/allure-results
 
 volumes:
   grafana-data:
