@@ -36,7 +36,7 @@ jobs:
       - name: Cleanup previous containers and reports
         run: |
           docker compose down -v --remove-orphans || true
-          sudo rm -rf allure-results allure-report || true
+          sudo rm -rf allure-results allure-report ai_analysis_report.md || true
 
       - name: Run tests with Docker Compose
         env:
@@ -60,7 +60,8 @@ jobs:
             allure generate allure-results -o allure-report --clean
           else
             mkdir -p allure-report
-            printf '%s\n' '# No allure results generated' > allure-report/index.html
+            printf '%s
+' '# No allure results generated' > allure-report/index.html
           fi
 
       - name: Upload Allure report artifact
@@ -76,6 +77,23 @@ jobs:
         with:
           name: allure-results
           path: allure-results
+
+      - name: Run AI test analyzer
+        if: always()
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: https://api.deepseek.com/v1
+          AI_MODEL: deepseek-chat
+          ALLURE_RESULTS_DIR: allure-results
+          AI_ANALYSIS_REPORT_FILE: ai_analysis_report.md
+        run: python tools/ai_test_analyzer.py
+
+      - name: Upload AI analysis report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-analysis-report
+          path: ai_analysis_report.md
 
       - name: Publish Allure report to GitHub Pages
         if: always() && github.ref == 'refs/heads/main'
