@@ -1,3 +1,5 @@
+import json
+
 import allure
 import pytest
 
@@ -97,7 +99,7 @@ def test_get_dashboard_summary_success(session_context):
     print("=========================================\n")
 
     allure.attach(
-        str(payload),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         name="Dashboard Summary Full Response",
         attachment_type=allure.attachment_type.JSON,
     )
