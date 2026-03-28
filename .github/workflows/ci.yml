@@ -2,6 +2,15 @@ name: Run Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_agent_demo_fault:
+        description: "Enable demo fault: stale subscription cache after delete"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   push:
     branches:
       - main
@@ -16,6 +25,8 @@ concurrency:
 jobs:
   run-tests:
     runs-on: ubuntu-latest
+    env:
+      AGENT_DEMO_SUBSCRIPTION_CACHE_BUG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_agent_demo_fault || 'false' }}
 
     steps:
       - name: Checkout code
@@ -52,6 +63,7 @@ jobs:
       - name: Start backend services in background
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AGENT_DEMO_SUBSCRIPTION_CACHE_BUG: ${{ env.AGENT_DEMO_SUBSCRIPTION_CACHE_BUG }}
         run: |
           docker compose up -d --build grafana mysql redis dashboard-hub prometheus
 
@@ -62,6 +74,7 @@ jobs:
         id: run_tests
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AGENT_DEMO_SUBSCRIPTION_CACHE_BUG: ${{ env.AGENT_DEMO_SUBSCRIPTION_CACHE_BUG }}
         run: docker compose run --rm test-runner
 
       - name: Collect docker compose logs
