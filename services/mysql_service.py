@@ -28,6 +28,32 @@ class MySQLService:
                 return cursor.fetchone()
 
     @staticmethod
+    def fetch_subscriptions_by_business_key(dashboard_uid: str, user_login: str, channel: str):
+        with MySQLService.connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT *
+                    FROM subscriptions
+                    WHERE dashboard_uid=%s AND user_login=%s AND channel=%s
+                    ORDER BY id ASC
+                    """,
+                    (dashboard_uid, user_login, channel),
+                )
+                return cursor.fetchall()
+
+    @staticmethod
+    def count_subscriptions_by_dashboard(dashboard_uid: str) -> int:
+        with MySQLService.connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS total FROM subscriptions WHERE dashboard_uid=%s",
+                    (dashboard_uid,),
+                )
+                row = cursor.fetchone() or {}
+                return int(row.get("total", 0))
+
+    @staticmethod
     def fetch_share_link_by_token(token: str):
         with MySQLService.connect() as conn:
             with conn.cursor() as cursor:
