@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import os
 
+
+def _get_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 GRAFANA_BASE_URL = os.getenv("GRAFANA_BASE_URL", "http://grafana:3000")
 GRAFANA_ADMIN_USER = os.getenv("GRAFANA_ADMIN_USER", "admin")
 GRAFANA_ADMIN_PASSWORD = os.getenv("GRAFANA_ADMIN_PASSWORD", "admin")
@@ -17,7 +22,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "120"))
 
-AI_ENABLED = os.getenv("AI_ENABLED", "false").lower() == "true"
+AI_ENABLED = _get_bool("AI_ENABLED", "false")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.deepseek.com/v1")
 AI_API_KEY = os.getenv("AI_API_KEY", "")
@@ -31,5 +36,8 @@ AI_MAX_PANELS_TO_SUMMARIZE = int(os.getenv("AI_MAX_PANELS_TO_SUMMARIZE", "3"))
 
 # 每个 panel 的完整 JSON 最多保留多少字符
 AI_MAX_PANEL_JSON_CHARS = int(os.getenv("AI_MAX_PANEL_JSON_CHARS", "3000"))
+
+# 手动演示 agent 时使用。开启后，删除订阅时故意不清理 subscriptions 缓存。
+AGENT_DEMO_SUBSCRIPTION_CACHE_BUG = _get_bool("AGENT_DEMO_SUBSCRIPTION_CACHE_BUG", "false")
 
 MYSQL_DSN = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
