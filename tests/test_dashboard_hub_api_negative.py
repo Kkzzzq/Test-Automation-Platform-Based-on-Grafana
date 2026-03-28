@@ -1,9 +1,11 @@
+import allure
 import pytest
 
 from data.dashboard_hub_data import make_share_link_payload
 from services.dashboard_hub_service import DashboardHubService
 
 
+@allure.label("fault_scenario", "subscription_unknown_dashboard")
 @pytest.mark.NegativeDashboardHub
 def test_create_subscription_with_unknown_dashboard():
     response, _ = DashboardHubService.create_subscription(
@@ -15,6 +17,7 @@ def test_create_subscription_with_unknown_dashboard():
     assert response.status_code == 404
 
 
+@allure.label("fault_scenario", "subscription_conflict")
 @pytest.mark.NegativeDashboardHub
 def test_create_duplicate_subscription(session_context):
     payload = {
@@ -32,12 +35,14 @@ def test_create_duplicate_subscription(session_context):
     assert second.status_code == 409
 
 
+@allure.label("fault_scenario", "unknown_share_token")
 @pytest.mark.NegativeDashboardHub
 def test_get_unknown_share_token():
     response = DashboardHubService.get_share_link("missing-token")
     assert response.status_code == 404
 
 
+@allure.label("fault_scenario", "illegal_subscription_channel")
 @pytest.mark.NegativeDashboardHub
 def test_create_subscription_with_illegal_channel(session_context):
     response, _ = DashboardHubService.create_subscription(
@@ -49,6 +54,7 @@ def test_create_subscription_with_illegal_channel(session_context):
     assert response.status_code == 422
 
 
+@allure.label("fault_scenario", "expired_share_link")
 @pytest.mark.NegativeDashboardHub
 def test_get_expired_share_link(session_context):
     payload = make_share_link_payload(session_context.dashboard_uid, ttl_hours=-1)

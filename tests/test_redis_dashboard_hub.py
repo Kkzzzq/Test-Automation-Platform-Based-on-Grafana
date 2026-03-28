@@ -8,6 +8,7 @@ from services.dashboard_hub_service import DashboardHubService
 from services.redis_service import RedisService
 
 
+@allure.label("fault_scenario", "subscription_cache_invalidation")
 @pytest.mark.cache
 def test_subscriptions_are_cached_and_invalidated(session_context):
     payload = make_subscription_payload(
@@ -35,6 +36,7 @@ def test_subscriptions_are_cached_and_invalidated(session_context):
     assert RedisService.exists(key) is False
 
 
+@allure.label("fault_scenario", "share_link_cache_invalidation")
 @pytest.mark.cache
 def test_share_link_is_cached_and_invalidated(session_context):
     create_response, token = DashboardHubService.create_share_link(
@@ -59,6 +61,7 @@ def test_share_link_is_cached_and_invalidated(session_context):
     assert RedisService.exists(key) is False
 
 
+@allure.label("fault_scenario", "summary_cache")
 @pytest.mark.cache
 def test_dashboard_summary_is_cached(session_context):
     response = DashboardHubService.get_dashboard_summary(session_context.dashboard_uid)
