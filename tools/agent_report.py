@@ -19,7 +19,7 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
     lines.append("")
     lines.append(f"- Allure total cases: {summary['allure']['total']}")
     lines.append(f"- Failed/Broken cases: {summary['allure']['failed_or_broken']}")
-    lines.append(f"- Routed cases: {summary['routed_cases']}")
+    lines.append(f"- Replayed failed tests: {summary['replayed_cases']}")
     lines.append(f"- Reproduced failures: {summary['reproduced_failures']}")
     lines.append(f"- High confidence diagnoses: {summary['high_confidence_cases']}")
     lines.append("")
@@ -40,10 +40,8 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
         state = item["state"]
         lines.append(f"### {index}. {item['test_name']}")
         lines.append("")
-        lines.append(f"- Scenario: {item.get('scenario') or 'unroutable'}")
-        lines.append(f"- Route source: {item.get('route_source')}")
-        lines.append(f"- Route status: {state['route_status']}")
-        lines.append(f"- Repro status: {state['repro_status']}")
+        lines.append(f"- Replay target: {item.get('replay_target') or 'unsupported'}")
+        lines.append(f"- Replay status: {state['replay_status']}")
         lines.append(f"- Evidence status: {state['evidence_status']}")
         lines.append(f"- Diagnosis status: {state['diagnosis_status']}")
         lines.append(f"- Likely layer: {item.get('likely_layer')}")
@@ -55,12 +53,12 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
             lines.append(f"- Message: {_md_escape(item['original_failure'].get('message', ''))}")
             lines.append("")
 
-        anomalies = item.get("anomalies") or []
-        if anomalies:
-            lines.append("**Observed anomalies**")
+        observations = item.get("observations") or []
+        if observations:
+            lines.append("**Observed facts / anomalies**")
             lines.append("")
-            for anomaly in anomalies:
-                lines.append(f"- {anomaly}")
+            for observation in observations:
+                lines.append(f"- {observation}")
             lines.append("")
 
         evidence_lines = item.get("evidence_lines") or []

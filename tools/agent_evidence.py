@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 import config.settings as settings
+from services.dashboard_hub_service import DashboardHubService
 from services.mysql_service import MySQLService
 from services.redis_service import RedisService
 
@@ -23,14 +24,14 @@ RELEVANT_METRIC_PREFIXES = (
     "dashboard_hub_summary_source_total",
 )
 
-LAYER_BY_ANOMALY_PREFIX = {
-    "mysql_": "database",
-    "redis_": "cache",
-    "cache_": "cache",
-    "metrics_": "monitoring_or_cache",
-    "summary_": "external_dependency_or_ai",
-    "unexpected_http": "interface",
-    "route_": "test_or_environment",
+LAYER_BY_OBSERVATION_PREFIX = {
+    "obs_db_": "database",
+    "obs_cache_": "cache",
+    "obs_summary_": "external_dependency_or_ai",
+    "obs_http_": "interface",
+    "obs_metrics_": "monitoring_or_cache",
+    "obs_logs_": "service_execution_path",
+    "replay_": "test_or_environment",
 }
 
 
@@ -131,6 +132,7 @@ def collect_subscription_snapshot(
         "cache_key": cache_key,
         "cache_exists": RedisService.exists(cache_key),
         "cache_payload": _serialize(RedisService.get_json(cache_key)),
+        "cache_ttl": RedisService.ttl(cache_key) if RedisService.exists(cache_key) else None,
     }
 
 
@@ -143,45 +145,64 @@ def collect_share_link_snapshot(token: str) -> dict[str, Any]:
         "cache_key": cache_key,
         "cache_exists": RedisService.exists(cache_key),
         "cache_payload": _serialize(RedisService.get_json(cache_key)),
-        "cache_raw": RedisService.get_raw(cache_key),
+        "cache_ttl": RedisService.ttl(cache_key) if RedisService.exists(cache_key) else None,
     }
 
 
-def collect_summary_snapshot(dashboard_uid: str, summary_key: str | None = None) -> dict[str, Any]:
-    key = summary_key or build_summary_cache_key(dashboard_uid)
+def collect_summary_snapshot(*, dashboard_uid: str, summary_key: str | None = None) -> dict[str, Any]:
+    resolved_key = summary_key or build_summary_cache_key(dashboard_uid)
     return {
         "dashboard_uid": dashboard_uid,
-        "summary_key": key,
-        "cache_exists": RedisService.exists(key),
-        "cache_payload": _serialize(RedisService.get_json(key)),
-        "cache_raw": RedisService.get_raw(key),
+        "cache_key": resolved_key,
+        "cache_exists": RedisService.exists(resolved_key),
+        "cache_payload": _serialize(RedisService.get_json(resolved_key)),
+        "cache_ttl": RedisService.ttl(resolved_key) if RedisService.exists(resolved_key) else None,
     }
 
 
-def derive_likely_layer(anomalies: list[str]) -> str:
-    for anomaly in anomalies:
-        for prefix, layer in LAYER_BY_ANOMALY_PREFIX.items():
-            if anomaly.startswith(prefix):
+def collect_service_log_snapshot(*, replay_id: str, limit: int = 200) -> dict[str, Any]:
+    try:
+        response = DashboardHubService.get_agent_logs(replay_id, limit=limit)
+        if response.status_code != 200:
+            return {"available": False, "items": []}
+        payload = response.json()
+        items = payload.get("items", [])
+        return {"available": True, "items": _serialize(items)}
+    except Exception:
+        return {"available": False, "items": []}
+
+
+def derive_likely_layer(observations: list[str], service_logs: list[dict[str, Any]] | None = None) -> str:
+    for observation in observations:
+        for prefix, layer in LAYER_BY_OBSERVATION_PREFIX.items():
+            if observation.startswith(prefix):
                 return layer
-    if anomalies:
+    items = service_logs or []
+    if any(item.get("event") == "subscription_delete_cache_invalidation_skipped" for item in items):
+        return "cache"
+    if observations:
         return "interface_or_environment"
     return "not_reproduced_or_environment"
 
 
-def build_evidence_lines(scenario_result: dict[str, Any]) -> list[str]:
+def build_evidence_lines(result: dict[str, Any]) -> list[str]:
     evidence_lines: list[str] = []
-    for step in scenario_result.get("http_steps", []):
+    for step in result.get("http_steps", []):
         evidence_lines.append(
             f"HTTP[{step['step']}] status={step['status_code']} expected={step.get('expected_status')} body={step['body_excerpt']}"
         )
 
-    diff = scenario_result.get("snapshot", {}).get("diff", {})
+    diff = result.get("snapshot", {}).get("diff", {})
     for key, value in diff.items():
         evidence_lines.append(f"SNAPSHOT[{key}] {json.dumps(value, ensure_ascii=False)}")
 
-    for key, value in scenario_result.get("intermediate", {}).items():
+    for key, value in result.get("intermediate", {}).items():
         evidence_lines.append(f"INTERMEDIATE[{key}] {json.dumps(_serialize(value), ensure_ascii=False)}")
 
-    if not evidence_lines and scenario_result.get("anomalies"):
-        evidence_lines.extend([f"ANOMALY[{item}]" for item in scenario_result["anomalies"]])
+    service_logs = result.get("snapshot", {}).get("after", {}).get("service_logs", {}).get("items", [])
+    for log_item in service_logs[-15:]:
+        evidence_lines.append(f"LOG[{log_item.get('event')}] {json.dumps(_serialize(log_item), ensure_ascii=False)}")
+
+    if not evidence_lines and result.get("observations"):
+        evidence_lines.extend([f"OBSERVATION[{item}]" for item in result["observations"]])
     return evidence_lines

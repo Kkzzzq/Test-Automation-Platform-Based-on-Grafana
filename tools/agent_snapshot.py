@@ -4,32 +4,46 @@ from typing import Any
 
 from tools.agent_evidence import (
     collect_metrics_snapshot,
+    collect_service_log_snapshot,
     collect_share_link_snapshot,
     collect_subscription_snapshot,
     collect_summary_snapshot,
     diff_metrics,
 )
 
-SUBSCRIPTION_SCENARIOS = {
-    "subscription_persistence",
-    "subscription_conflict",
-    "subscription_cache_invalidation",
-    "subscription_unknown_dashboard",
-    "illegal_subscription_channel",
+SUBSCRIPTION_TESTS = {
+    "test_create_subscription_success",
+    "test_get_subscriptions_success",
+    "test_create_duplicate_subscription",
+    "test_create_subscription_with_unknown_dashboard",
+    "test_create_subscription_with_illegal_channel",
+    "test_subscription_written_to_mysql",
+    "test_subscriptions_are_cached_and_invalidated",
 }
 
-SHARE_SCENARIOS = {
-    "share_link_view_count",
-    "share_link_cache_invalidation",
-    "expired_share_link",
-    "unknown_share_token",
+SHARE_TESTS = {
+    "test_create_share_link_success",
+    "test_get_share_link_success",
+    "test_get_unknown_share_token",
+    "test_get_expired_share_link",
+    "test_share_link_written_to_mysql_and_view_count_updated",
+    "test_share_link_is_cached_and_invalidated",
+}
+
+SUMMARY_TESTS = {
+    "test_get_dashboard_summary_success",
+    "test_dashboard_summary_is_cached",
 }
 
 
-def capture_snapshot(scenario: str, runtime: dict[str, Any]) -> dict[str, Any]:
+def capture_snapshot(replay_target: str, runtime: dict[str, Any]) -> dict[str, Any]:
     snapshot: dict[str, Any] = {"metrics": collect_metrics_snapshot()}
 
-    if scenario in SUBSCRIPTION_SCENARIOS and all(
+    replay_id = runtime.get("replay_id")
+    if replay_id:
+        snapshot["service_logs"] = collect_service_log_snapshot(replay_id=replay_id)
+
+    if replay_target in SUBSCRIPTION_TESTS and all(
         runtime.get(key) is not None for key in ("dashboard_uid", "user_login", "channel")
     ):
         snapshot["subscription"] = collect_subscription_snapshot(
@@ -39,10 +53,10 @@ def capture_snapshot(scenario: str, runtime: dict[str, Any]) -> dict[str, Any]:
             subscription_id=runtime.get("subscription_id"),
         )
 
-    if scenario in SHARE_SCENARIOS and runtime.get("token"):
+    if replay_target in SHARE_TESTS and runtime.get("token"):
         snapshot["share_link"] = collect_share_link_snapshot(runtime["token"])
 
-    if scenario == "summary_cache" and runtime.get("dashboard_uid"):
+    if replay_target in SUMMARY_TESTS and runtime.get("dashboard_uid"):
         snapshot["summary"] = collect_summary_snapshot(
             dashboard_uid=runtime["dashboard_uid"],
             summary_key=runtime.get("summary_key"),
