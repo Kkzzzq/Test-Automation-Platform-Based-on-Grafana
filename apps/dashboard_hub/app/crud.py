@@ -30,13 +30,30 @@ from app.metrics import CACHE_HIT_COUNT, CACHE_MISS_COUNT, SUMMARY_SOURCE_COUNT
 from app.models import ShareLink, Subscription
 
 
-def dashboard_exists(dashboard_uid: str) -> bool:
-    record_event("dashboard_lookup_started", dashboard_uid=dashboard_uid)
-    response = requests.get(
+_GRAFANA_DASHBOARD_TIMEOUT_SECONDS = 10
+
+
+def _fetch_grafana_dashboard_response(dashboard_uid: str):
+    return requests.get(
         f"{GRAFANA_BASE_URL}/api/dashboards/uid/{dashboard_uid}",
         auth=(GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD),
-        timeout=10,
+        timeout=_GRAFANA_DASHBOARD_TIMEOUT_SECONDS,
     )
+
+
+def dashboard_exists(dashboard_uid: str) -> bool:
+    record_event("dashboard_lookup_started", dashboard_uid=dashboard_uid)
+    try:
+        response = _fetch_grafana_dashboard_response(dashboard_uid)
+    except requests.RequestException as exc:
+        record_event(
+            "dashboard_lookup_request_failed",
+            dashboard_uid=dashboard_uid,
+            error_class=exc.__class__.__name__,
+            error=str(exc),
+        )
+        return False
+
     exists = response.status_code == 200
     record_event(
         "dashboard_lookup_finished",
@@ -95,11 +112,17 @@ def _extract_panel_payloads(panels: list[dict] | None) -> list[dict[str, Any]]:
 
 def fetch_dashboard_context(dashboard_uid: str) -> dict | None:
     record_event("summary_dashboard_context_fetch_started", dashboard_uid=dashboard_uid)
-    response = requests.get(
-        f"{GRAFANA_BASE_URL}/api/dashboards/uid/{dashboard_uid}",
-        auth=(GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD),
-        timeout=10,
-    )
+    try:
+        response = _fetch_grafana_dashboard_response(dashboard_uid)
+    except requests.RequestException as exc:
+        record_event(
+            "summary_dashboard_context_fetch_request_failed",
+            dashboard_uid=dashboard_uid,
+            error_class=exc.__class__.__name__,
+            error=str(exc),
+        )
+        return None
+
     if response.status_code != 200:
         record_event(
             "summary_dashboard_context_fetch_failed",
@@ -108,7 +131,17 @@ def fetch_dashboard_context(dashboard_uid: str) -> dict | None:
         )
         return None
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        record_event(
+            "summary_dashboard_context_parse_failed",
+            dashboard_uid=dashboard_uid,
+            error_class=exc.__class__.__name__,
+            error=str(exc),
+        )
+        return None
+
     meta = payload.get("meta", {})
     dashboard = payload.get("dashboard", {})
     raw_panels = dashboard.get("panels", [])
