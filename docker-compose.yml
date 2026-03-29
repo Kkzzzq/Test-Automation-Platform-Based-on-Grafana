@@ -70,7 +70,7 @@ services:
       AI_PROMPT_VERSION: v1
       AI_MAX_SUMMARY_CHARS: 80
 
-      AGENT_DEMO_SUBSCRIPTION_CACHE_BUG: ${AGENT_DEMO_SUBSCRIPTION_CACHE_BUG:-false}
+      AGENT_DEMO_FAULTS: ${AGENT_DEMO_FAULTS:-off}
 
     depends_on:
       grafana:
@@ -125,7 +125,7 @@ services:
       REDIS_PORT: 6379
       REDIS_DB: 0
       ALLURE_RESULTS_DIR: /app/allure-results
-      AGENT_DEMO_SUBSCRIPTION_CACHE_BUG: ${AGENT_DEMO_SUBSCRIPTION_CACHE_BUG:-false}
+      AGENT_DEMO_FAULTS: ${AGENT_DEMO_FAULTS:-off}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./allure-results:/app/allure-results
