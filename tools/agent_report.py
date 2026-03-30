@@ -20,8 +20,8 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
     lines.append(f"- Allure total cases: {summary['allure']['total']}")
     lines.append(f"- Failed/Broken cases: {summary['allure']['failed_or_broken']}")
     lines.append(f"- Replayed failed tests: {summary['replayed_cases']}")
-    lines.append(f"- Reproduced failures: {summary['reproduced_failures']}")
-    lines.append(f"- High confidence diagnoses: {summary['high_confidence_cases']}")
+    lines.append(f"- Reproduced original failures: {summary['reproduced_original_failures']}")
+    lines.append(f"- Chain interrupted cases: {summary['chain_interrupted_cases']}")
     lines.append("")
 
     if ai_summary:
@@ -42,9 +42,10 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
         lines.append("")
         lines.append(f"- Replay target: {item.get('replay_target') or 'unsupported'}")
         lines.append(f"- Replay status: {state['replay_status']}")
-        lines.append(f"- Evidence status: {state['evidence_status']}")
-        lines.append(f"- Diagnosis status: {state['diagnosis_status']}")
-        lines.append(f"- Likely layer: {item.get('likely_layer')}")
+        lines.append(f"- Chain status: {item.get('chain_status')}")
+        lines.append(f"- Reproduced original failure: {item.get('reproduced_original_failure')}")
+        lines.append(f"- First abnormal stage: {item.get('first_abnormal_stage')}")
+        lines.append(f"- Suspected segment: {item.get('suspected_segment')}")
         lines.append("")
 
         if item.get("original_failure"):
@@ -53,12 +54,28 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
             lines.append(f"- Message: {_md_escape(item['original_failure'].get('message', ''))}")
             lines.append("")
 
-        observations = item.get("observations") or []
-        if observations:
-            lines.append("**Observed facts / anomalies**")
+        confirmed_facts = item.get("confirmed_facts") or []
+        if confirmed_facts:
+            lines.append("**Confirmed facts**")
             lines.append("")
-            for observation in observations:
-                lines.append(f"- {observation}")
+            for fact in confirmed_facts:
+                lines.append(f"- {_md_escape(fact)}")
+            lines.append("")
+
+        excluded_scope = item.get("excluded_scope") or []
+        if excluded_scope:
+            lines.append("**Excluded scope**")
+            lines.append("")
+            for scope in excluded_scope:
+                lines.append(f"- {_md_escape(scope)}")
+            lines.append("")
+
+        remaining_scope = item.get("remaining_scope") or []
+        if remaining_scope:
+            lines.append("**Remaining scope**")
+            lines.append("")
+            for scope in remaining_scope:
+                lines.append(f"- {_md_escape(scope)}")
             lines.append("")
 
         evidence_lines = item.get("evidence_lines") or []
@@ -69,12 +86,12 @@ def build_markdown_report(summary: dict[str, Any], case_results: list[dict[str, 
                 lines.append(f"- {_md_escape(evidence)}")
             lines.append("")
 
-        next_actions = item.get("next_actions") or []
-        if next_actions:
-            lines.append("**Suggested checks**")
+        manual_checks = item.get("manual_checks") or []
+        if manual_checks:
+            lines.append("**Manual checks**")
             lines.append("")
-            for action in next_actions:
-                lines.append(f"1. {action}")
+            for action in manual_checks:
+                lines.append(f"1. {_md_escape(action)}")
             lines.append("")
 
         snapshot_diff = item.get("snapshot_diff")

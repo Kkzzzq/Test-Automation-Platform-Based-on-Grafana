@@ -26,17 +26,6 @@ RELEVANT_METRIC_PREFIXES = (
     "dashboard_hub_summary_source_total",
 )
 
-LAYER_BY_OBSERVATION_PREFIX = {
-    "obs_db_": "database",
-    "obs_cache_": "cache",
-    "obs_summary_": "external_dependency_or_ai",
-    "obs_http_": "interface",
-    "obs_metrics_": "monitoring_or_cache",
-    "obs_logs_": "service_execution_path",
-    "replay_": "test_or_environment",
-}
-
-
 def _serialize(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): _serialize(v) for k, v in value.items()}
@@ -236,18 +225,6 @@ def _sanitize_log_item(item: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
-def derive_likely_layer(observations: list[str], service_logs: list[dict[str, Any]] | None = None) -> str:
-    for observation in observations:
-        for prefix, layer in LAYER_BY_OBSERVATION_PREFIX.items():
-            if observation.startswith(prefix):
-                return layer
-    if observations:
-        return "interface_or_environment"
-    if service_logs:
-        return "service_execution_path"
-    return "not_reproduced_or_environment"
-
-
 def build_evidence_lines(result: dict[str, Any]) -> list[str]:
     evidence_lines: list[str] = []
     for step in result.get("http_steps", []):
@@ -279,6 +256,23 @@ def build_evidence_lines(result: dict[str, Any]) -> list[str]:
         serialized = json.dumps(_serialize(log_item), ensure_ascii=False)
         if not _contains_demo_fault_marker(serialized):
             evidence_lines.append(f"LOG[{log_item.get('event')}] {serialized}")
+
+    facts = result.get("facts", {}) or {}
+    for key in (
+        "create_status",
+        "list_status",
+        "get_status",
+        "summary_status",
+        "delete_status",
+        "cache_payload_after_list_present",
+        "cache_payload_after_read_present",
+        "subscription_business_key_count_after",
+        "subscription_cache_exists_after",
+        "share_cache_exists_after",
+        "summary_cache_exists_after",
+    ):
+        if key in facts:
+            evidence_lines.append(f"FACT[{key}]={json.dumps(_serialize(facts[key]), ensure_ascii=False)}")
 
     if not evidence_lines and result.get("observations"):
         evidence_lines.extend([f"OBSERVATION[{item}]" for item in result["observations"]])

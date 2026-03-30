@@ -61,7 +61,6 @@ def _finalize_result(
         "http_steps": http_steps,
         "intermediate": intermediate,
         "observations": observations,
-        "failure_reproduced": bool(observations),
         "execution_error": execution_error,
         "snapshot": {
             "before": before,
@@ -754,7 +753,6 @@ def run_failed_test_replay(test_name: str, context: AgentEnvironmentContext) -> 
             "replay_target": resolved_name or test_name,
             "requested_test_name": test_name,
             "execution_error": f"unsupported failed test replay: {test_name}",
-            "failure_reproduced": False,
             "http_steps": [],
             "intermediate": {},
             "observations": ["replay_unsupported_test"],
@@ -773,7 +771,6 @@ def run_failed_test_replay(test_name: str, context: AgentEnvironmentContext) -> 
             "requested_test_name": test_name,
             "resolved_test_name": resolved_name,
             "execution_error": str(exc),
-            "failure_reproduced": False,
             "http_steps": [],
             "intermediate": {},
             "observations": ["replay_execution_failed"],
