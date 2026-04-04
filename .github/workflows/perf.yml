@@ -2,22 +2,63 @@ name: Run Performance Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: Select the performance scenario to run
+        required: true
+        default: hot_read
+        type: choice
+        options:
+          - hot_read
+          - write_conflict
+          - cache_penetration
+          - cache_breakdown
 
 jobs:
   perf:
     runs-on: ubuntu-latest
-    env:
-      LOCUST_USERS: 30
-      LOCUST_SPAWN_RATE: 5
-      LOCUST_RUN_TIME: 4m
-      LOCUST_WARMUP_REQUESTS: 2
-      LOCUST_ENABLE_SUMMARY: "true"
-      METRICS_SAMPLE_INTERVAL_SECONDS: 10
-      METRICS_SAMPLE_DURATION_SECONDS: 250
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Choose scenario profile
+        run: |
+          scenario='${{ inputs.scenario }}'
+          case "$scenario" in
+            hot_read)
+              echo 'PERF_LOCUST_FILE=perf/locust_hot_read.py' >> "$GITHUB_ENV"
+              echo 'PERF_THRESHOLD_PROFILE=hot_read' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=40' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=8' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=4m' >> "$GITHUB_ENV"
+              ;;
+            write_conflict)
+              echo 'PERF_LOCUST_FILE=perf/locust_write_conflict.py' >> "$GITHUB_ENV"
+              echo 'PERF_THRESHOLD_PROFILE=write_conflict' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=25' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=5' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=4m' >> "$GITHUB_ENV"
+              ;;
+            cache_penetration)
+              echo 'PERF_LOCUST_FILE=perf/locust_cache_penetration.py' >> "$GITHUB_ENV"
+              echo 'PERF_THRESHOLD_PROFILE=cache_penetration' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=30' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=6' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=3m' >> "$GITHUB_ENV"
+              ;;
+            cache_breakdown)
+              echo 'PERF_LOCUST_FILE=perf/locust_cache_breakdown.py' >> "$GITHUB_ENV"
+              echo 'PERF_THRESHOLD_PROFILE=cache_breakdown' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=50' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=10' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=2m' >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported scenario: $scenario" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Start required services
         run: docker compose up -d --build grafana mysql redis dashboard-hub prometheus
@@ -57,6 +98,7 @@ jobs:
           GRAFANA_ADMIN_USER: admin
           GRAFANA_ADMIN_PASSWORD: admin
           LOCUST_DASHBOARD_COUNT: 5
+          LOCUST_SUBSCRIPTIONS_PER_DASHBOARD: 3
         run: python perf/bootstrap_perf_data.py --github-env "$GITHUB_ENV"
 
       - name: Create virtual environment and install dependencies
@@ -65,60 +107,44 @@ jobs:
           . .venv/bin/activate
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
-          python -m pip install "locust>=2.31,<3" "gevent>=24.2.1" "zope.event>=5.0" "zope.interface>=7.0"
           python - <<'PY'
           import locust
-          import gevent
-          import zope.event
-          import zope.interface
-          print('Locust dependencies installed successfully')
+          import redis
+          print('Performance dependencies installed successfully')
           PY
 
       - name: Collect metrics before load
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py \
-            --metrics-url http://localhost:8000/metrics \
-            --output perf-results/metrics-before.json
+          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-before.json
 
-      - name: Run Locust headless and sample metrics during load
+      - name: Run selected performance scenario
         env:
           LOCUST_DASHBOARD_UIDS: ${{ env.LOCUST_DASHBOARD_UIDS }}
           LOCUST_SHARE_TOKENS: ${{ env.LOCUST_SHARE_TOKENS }}
+          LOCUST_HOT_DASHBOARD_UID: ${{ env.LOCUST_HOT_DASHBOARD_UID }}
+          LOCUST_HOT_SHARE_TOKEN: ${{ env.LOCUST_HOT_SHARE_TOKEN }}
           LOCUST_CONFLICT_USER_LOGIN: ${{ env.LOCUST_CONFLICT_USER_LOGIN }}
-          LOCUST_WARMUP_REQUESTS: ${{ env.LOCUST_WARMUP_REQUESTS }}
-          LOCUST_ENABLE_SUMMARY: ${{ env.LOCUST_ENABLE_SUMMARY }}
+          LOCUST_WARMUP_REQUESTS: 3
+          LOCUST_BREAKDOWN_WARMUP_REQUESTS: 2
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_DB: 0
         run: |
           . .venv/bin/activate
           mkdir -p perf-results
-          python perf/sample_metrics_during_load.py \
-            --metrics-url http://localhost:8000/metrics \
-            --interval-seconds "$METRICS_SAMPLE_INTERVAL_SECONDS" \
-            --duration-seconds "$METRICS_SAMPLE_DURATION_SECONDS" \
-            --output perf-results/metrics-series.json &
-          METRICS_SAMPLER_PID=$!
-
-          locust -f perf/locustfile.py \
-            --host http://localhost:8000 \
-            --headless \
-            -u "$LOCUST_USERS" -r "$LOCUST_SPAWN_RATE" -t "$LOCUST_RUN_TIME" \
-            --csv=perf-results/locust \
-            --html=perf-results/locust-report.html
-
-          wait "$METRICS_SAMPLER_PID"
+          locust -f "$PERF_LOCUST_FILE"             --host http://localhost:8000             --headless             -u "$PERF_USERS" -r "$PERF_RATE" -t "$PERF_DURATION"             --csv=perf-results/locust             --html=perf-results/locust-report.html
 
       - name: Collect metrics after load
         if: always()
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py \
-            --metrics-url http://localhost:8000/metrics \
-            --output perf-results/metrics-after.json
+          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
 
       - name: Assert performance thresholds
         run: |
           . .venv/bin/activate
-          python perf/assert_locust_thresholds.py --csv perf-results/locust_stats.csv
+          python perf/assert_locust_thresholds.py             --csv perf-results/locust_stats.csv             --profile "$PERF_THRESHOLD_PROFILE"
 
       - name: Collect container logs on failure
         if: failure()
@@ -130,7 +156,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: perf-results
+          name: perf-results-${{ inputs.scenario }}
           path: perf-results
 
       - name: Cleanup
