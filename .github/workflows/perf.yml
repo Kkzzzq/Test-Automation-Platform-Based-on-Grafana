@@ -13,6 +13,26 @@ on:
           - write_conflict
           - cache_penetration
           - cache_breakdown
+      users:
+        description: Optional override for total Locust users
+        required: false
+        default: ''
+      rate:
+        description: Optional override for spawn rate per second
+        required: false
+        default: ''
+      duration:
+        description: Optional override for duration (for example 6m)
+        required: false
+        default: ''
+      wait_min_seconds:
+        description: Optional override for per-user minimum wait time
+        required: false
+        default: ''
+      wait_max_seconds:
+        description: Optional override for per-user maximum wait time
+        required: false
+        default: ''
 
 jobs:
   perf:
@@ -29,40 +49,78 @@ jobs:
             hot_read)
               echo 'PERF_LOCUST_FILE=perf/locust_hot_read.py' >> "$GITHUB_ENV"
               echo 'PERF_THRESHOLD_PROFILE=hot_read' >> "$GITHUB_ENV"
-              echo 'PERF_USERS=40' >> "$GITHUB_ENV"
-              echo 'PERF_RATE=8' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION=4m' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION_SECONDS=240' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=120' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=20' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=6m' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION_SECONDS=360' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MIN_SECONDS=0.01' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MAX_SECONDS=0.05' >> "$GITHUB_ENV"
+              echo 'LOCUST_DASHBOARD_COUNT=20' >> "$GITHUB_ENV"
+              echo 'LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=20' >> "$GITHUB_ENV"
               ;;
             write_conflict)
               echo 'PERF_LOCUST_FILE=perf/locust_write_conflict.py' >> "$GITHUB_ENV"
               echo 'PERF_THRESHOLD_PROFILE=write_conflict' >> "$GITHUB_ENV"
-              echo 'PERF_USERS=25' >> "$GITHUB_ENV"
-              echo 'PERF_RATE=5' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION=4m' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION_SECONDS=240' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=80' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=12' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=5m' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION_SECONDS=300' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MIN_SECONDS=0.01' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MAX_SECONDS=0.04' >> "$GITHUB_ENV"
+              echo 'LOCUST_DASHBOARD_COUNT=10' >> "$GITHUB_ENV"
+              echo 'LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=5' >> "$GITHUB_ENV"
               ;;
             cache_penetration)
               echo 'PERF_LOCUST_FILE=perf/locust_cache_penetration.py' >> "$GITHUB_ENV"
               echo 'PERF_THRESHOLD_PROFILE=cache_penetration' >> "$GITHUB_ENV"
-              echo 'PERF_USERS=30' >> "$GITHUB_ENV"
-              echo 'PERF_RATE=6' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION=3m' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION_SECONDS=180' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=100' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=18' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=4m' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION_SECONDS=240' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MIN_SECONDS=0.00' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MAX_SECONDS=0.03' >> "$GITHUB_ENV"
+              echo 'LOCUST_DASHBOARD_COUNT=5' >> "$GITHUB_ENV"
+              echo 'LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=3' >> "$GITHUB_ENV"
               ;;
             cache_breakdown)
               echo 'PERF_LOCUST_FILE=perf/locust_cache_breakdown.py' >> "$GITHUB_ENV"
               echo 'PERF_THRESHOLD_PROFILE=cache_breakdown' >> "$GITHUB_ENV"
-              echo 'PERF_USERS=50' >> "$GITHUB_ENV"
-              echo 'PERF_RATE=10' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION=2m' >> "$GITHUB_ENV"
-              echo 'PERF_DURATION_SECONDS=120' >> "$GITHUB_ENV"
+              echo 'PERF_USERS=150' >> "$GITHUB_ENV"
+              echo 'PERF_RATE=30' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION=3m' >> "$GITHUB_ENV"
+              echo 'PERF_DURATION_SECONDS=180' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MIN_SECONDS=0.00' >> "$GITHUB_ENV"
+              echo 'LOCUST_WAIT_MAX_SECONDS=0.01' >> "$GITHUB_ENV"
+              echo 'LOCUST_DASHBOARD_COUNT=5' >> "$GITHUB_ENV"
+              echo 'LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=50' >> "$GITHUB_ENV"
               ;;
             *)
               echo "Unsupported scenario: $scenario" >&2
               exit 1
               ;;
           esac
+
+      - name: Apply optional overrides
+        run: |
+          if [ -n '${{ inputs.users }}' ]; then echo 'PERF_USERS=${{ inputs.users }}' >> "$GITHUB_ENV"; fi
+          if [ -n '${{ inputs.rate }}' ]; then echo 'PERF_RATE=${{ inputs.rate }}' >> "$GITHUB_ENV"; fi
+          if [ -n '${{ inputs.duration }}' ]; then
+            echo 'PERF_DURATION=${{ inputs.duration }}' >> "$GITHUB_ENV"
+            python - <<'PY'
+import os, re
+raw = "${{ inputs.duration }}".strip()
+match = re.fullmatch(r'(\d+)([smh])', raw)
+if not match:
+    raise SystemExit(f'Unsupported duration format: {raw}')
+value = int(match.group(1))
+unit = match.group(2)
+seconds = value if unit == 's' else value * 60 if unit == 'm' else value * 3600
+with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
+    fh.write(f'PERF_DURATION_SECONDS={seconds}\n')
+PY
+          fi
+          if [ -n '${{ inputs.wait_min_seconds }}' ]; then echo 'LOCUST_WAIT_MIN_SECONDS=${{ inputs.wait_min_seconds }}' >> "$GITHUB_ENV"; fi
+          if [ -n '${{ inputs.wait_max_seconds }}' ]; then echo 'LOCUST_WAIT_MAX_SECONDS=${{ inputs.wait_max_seconds }}' >> "$GITHUB_ENV"; fi
 
       - name: Start required services
         run: docker compose up -d --build grafana mysql redis dashboard-hub prometheus
@@ -101,8 +159,8 @@ jobs:
           DASHBOARD_HUB_BASE_URL: http://localhost:8000
           GRAFANA_ADMIN_USER: admin
           GRAFANA_ADMIN_PASSWORD: admin
-          LOCUST_DASHBOARD_COUNT: 5
-          LOCUST_SUBSCRIPTIONS_PER_DASHBOARD: 3
+          LOCUST_DASHBOARD_COUNT: ${{ env.LOCUST_DASHBOARD_COUNT }}
+          LOCUST_SUBSCRIPTIONS_PER_DASHBOARD: ${{ env.LOCUST_SUBSCRIPTIONS_PER_DASHBOARD }}
         run: python perf/bootstrap_perf_data.py --github-env "$GITHUB_ENV"
 
       - name: Create virtual environment and install dependencies
@@ -120,13 +178,20 @@ jobs:
       - name: Collect metrics before load
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-before.json
+          python perf/collect_metrics_snapshot.py \
+            --metrics-url http://localhost:8000/metrics \
+            --output perf-results/metrics-before.json
 
       - name: Start metrics sampling during load
         run: |
           . .venv/bin/activate
           mkdir -p perf-results
-          nohup python perf/sample_metrics_during_load.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-series.json             --interval-seconds 10             --duration-seconds "$PERF_DURATION_SECONDS"             > perf-results/metrics-sampler.log 2>&1 &
+          nohup python perf/sample_metrics_during_load.py \
+            --metrics-url http://localhost:8000/metrics \
+            --output perf-results/metrics-series.json \
+            --interval-seconds 10 \
+            --duration-seconds "$PERF_DURATION_SECONDS" \
+            > perf-results/metrics-sampler.log 2>&1 &
           echo $! > perf-results/metrics-sampler.pid
 
       - name: Run selected performance scenario
@@ -136,15 +201,22 @@ jobs:
           LOCUST_HOT_DASHBOARD_UID: ${{ env.LOCUST_HOT_DASHBOARD_UID }}
           LOCUST_HOT_SHARE_TOKEN: ${{ env.LOCUST_HOT_SHARE_TOKEN }}
           LOCUST_CONFLICT_USER_LOGIN: ${{ env.LOCUST_CONFLICT_USER_LOGIN }}
-          LOCUST_WARMUP_REQUESTS: 3
+          LOCUST_WARMUP_REQUESTS: 2
           LOCUST_BREAKDOWN_WARMUP_REQUESTS: 2
+          LOCUST_WAIT_MIN_SECONDS: ${{ env.LOCUST_WAIT_MIN_SECONDS }}
+          LOCUST_WAIT_MAX_SECONDS: ${{ env.LOCUST_WAIT_MAX_SECONDS }}
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           REDIS_DB: 0
         run: |
           . .venv/bin/activate
           mkdir -p perf-results
-          locust -f "$PERF_LOCUST_FILE"             --host http://localhost:8000             --headless             -u "$PERF_USERS" -r "$PERF_RATE" -t "$PERF_DURATION"             --csv=perf-results/locust             --html=perf-results/locust-report.html
+          locust -f "$PERF_LOCUST_FILE" \
+            --host http://localhost:8000 \
+            --headless \
+            -u "$PERF_USERS" -r "$PERF_RATE" -t "$PERF_DURATION" \
+            --csv=perf-results/locust \
+            --html=perf-results/locust-report.html
 
       - name: Wait for metrics sampler
         if: always()
@@ -162,12 +234,16 @@ jobs:
         if: always()
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
+          python perf/collect_metrics_snapshot.py \
+            --metrics-url http://localhost:8000/metrics \
+            --output perf-results/metrics-after.json
 
       - name: Assert performance thresholds
         run: |
           . .venv/bin/activate
-          python perf/assert_locust_thresholds.py             --csv perf-results/locust_stats.csv             --profile "$PERF_THRESHOLD_PROFILE"
+          python perf/assert_locust_thresholds.py \
+            --csv perf-results/locust_stats.csv \
+            --profile "$PERF_THRESHOLD_PROFILE"
 
       - name: Collect container logs on failure
         if: failure()
