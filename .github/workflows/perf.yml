@@ -250,7 +250,7 @@ PY
         run: |
           . .venv/bin/activate
           mkdir -p perf-results
-          nohup python perf/sample_metrics_during_load.py \
+          nohup python -m perf.sample_metrics_during_load \
             --metrics-url http://localhost:8000/metrics \
             --output perf-results/metrics-series.json \
             --interval-seconds 10 \
