@@ -390,3 +390,8 @@ Dashboard Hub 通过 `/metrics` 暴露 Prometheus 指标，重点包括：
 ## License
 
 MIT
+
+
+## 性能测试增强
+
+已补充种子数据准备、阈值校验、指标快照与 HTML 报告生成。
