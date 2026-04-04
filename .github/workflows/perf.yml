@@ -6,6 +6,14 @@ on:
 jobs:
   perf:
     runs-on: ubuntu-latest
+    env:
+      LOCUST_USERS: 30
+      LOCUST_SPAWN_RATE: 5
+      LOCUST_RUN_TIME: 4m
+      LOCUST_WARMUP_REQUESTS: 2
+      LOCUST_ENABLE_SUMMARY: "true"
+      METRICS_SAMPLE_INTERVAL_SECONDS: 10
+      METRICS_SAMPLE_DURATION_SECONDS: 250
 
     steps:
       - name: Checkout code
@@ -69,24 +77,43 @@ jobs:
       - name: Collect metrics before load
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-before.json
+          python perf/collect_metrics_snapshot.py \
+            --metrics-url http://localhost:8000/metrics \
+            --output perf-results/metrics-before.json
 
-      - name: Run Locust headless
+      - name: Run Locust headless and sample metrics during load
         env:
           LOCUST_DASHBOARD_UIDS: ${{ env.LOCUST_DASHBOARD_UIDS }}
           LOCUST_SHARE_TOKENS: ${{ env.LOCUST_SHARE_TOKENS }}
           LOCUST_CONFLICT_USER_LOGIN: ${{ env.LOCUST_CONFLICT_USER_LOGIN }}
-          LOCUST_WARMUP_REQUESTS: 2
+          LOCUST_WARMUP_REQUESTS: ${{ env.LOCUST_WARMUP_REQUESTS }}
+          LOCUST_ENABLE_SUMMARY: ${{ env.LOCUST_ENABLE_SUMMARY }}
         run: |
           . .venv/bin/activate
           mkdir -p perf-results
-          locust -f perf/locustfile.py             --host http://localhost:8000             --headless             -u 30 -r 5 -t 4m             --csv=perf-results/locust             --html=perf-results/locust-report.html
+          python perf/sample_metrics_during_load.py \
+            --metrics-url http://localhost:8000/metrics \
+            --interval-seconds "$METRICS_SAMPLE_INTERVAL_SECONDS" \
+            --duration-seconds "$METRICS_SAMPLE_DURATION_SECONDS" \
+            --output perf-results/metrics-series.json &
+          METRICS_SAMPLER_PID=$!
+
+          locust -f perf/locustfile.py \
+            --host http://localhost:8000 \
+            --headless \
+            -u "$LOCUST_USERS" -r "$LOCUST_SPAWN_RATE" -t "$LOCUST_RUN_TIME" \
+            --csv=perf-results/locust \
+            --html=perf-results/locust-report.html
+
+          wait "$METRICS_SAMPLER_PID"
 
       - name: Collect metrics after load
         if: always()
         run: |
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
+          python perf/collect_metrics_snapshot.py \
+            --metrics-url http://localhost:8000/metrics \
+            --output perf-results/metrics-after.json
 
       - name: Assert performance thresholds
         run: |
