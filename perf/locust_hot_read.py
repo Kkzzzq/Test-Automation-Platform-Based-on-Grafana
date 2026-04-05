@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from itertools import cycle
 
+from gevent.lock import Semaphore
 from locust import HttpUser, between, task
 
 
@@ -24,6 +25,8 @@ WAIT_MAX_SECONDS = _env_float('LOCUST_WAIT_MAX_SECONDS', 0.05)
 
 _dashboard_cycle = cycle(DASHBOARD_UIDS) if DASHBOARD_UIDS else None
 _share_cycle = cycle(SHARE_TOKENS) if SHARE_TOKENS else None
+_warmup_lock = Semaphore()
+_warmup_done = False
 
 
 def _next_value(pool_cycle):
@@ -38,19 +41,30 @@ class HotReadUser(HttpUser):
     wait_time = between(WAIT_MIN_SECONDS, WAIT_MAX_SECONDS)
 
     def on_start(self):
-        for _ in range(WARMUP_REQUESTS):
-            dashboard_uid = _next_value(_dashboard_cycle)
-            if dashboard_uid:
-                self.client.get(
-                    f'/api/v1/dashboards/{dashboard_uid}/subscriptions',
-                    name='/warmup/subscriptions',
-                )
-            token = _next_value(_share_cycle)
-            if token:
-                self.client.get(
-                    f'/api/v1/share-links/{token}',
-                    name='/warmup/share-link',
-                )
+        global _warmup_done
+
+        if _warmup_done:
+            return
+
+        with _warmup_lock:
+            if _warmup_done:
+                return
+
+            for _ in range(WARMUP_REQUESTS):
+                dashboard_uid = _next_value(_dashboard_cycle)
+                if dashboard_uid:
+                    self.client.get(
+                        f'/api/v1/dashboards/{dashboard_uid}/subscriptions',
+                        name='/warmup/subscriptions',
+                    )
+                token = _next_value(_share_cycle)
+                if token:
+                    self.client.get(
+                        f'/api/v1/share-links/{token}',
+                        name='/warmup/share-link',
+                    )
+
+            _warmup_done = True
 
     @task(8)
     def read_subscriptions_hot(self):
