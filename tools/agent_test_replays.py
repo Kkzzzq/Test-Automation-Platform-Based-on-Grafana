@@ -774,6 +774,8 @@ def run_failed_test_replay(test_name: str, context: AgentEnvironmentContext) -> 
             "execution_error": str(exc),
             "http_steps": [],
             "intermediate": {},
+            "observations": [],
+            "facts": {},
             "snapshot": {"before": {}, "after": {}, "diff": {}},
             "runtime": {},
         }
