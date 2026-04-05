@@ -23,7 +23,7 @@ class ApiDashboardsService:
             "POST",
             "/api/folders",
             auth=auth or settings.BASIC_AUTH,
-            json=body or data.body_for_create_folder,
+            json=body or data.make_body_for_create_folder(),
             headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)

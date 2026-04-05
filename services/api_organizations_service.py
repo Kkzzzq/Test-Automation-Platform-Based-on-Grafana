@@ -5,7 +5,7 @@ import logging
 from requests import Response
 
 import config.settings as settings
-from data.organizations_data import add_in_organizations_body, test_organizations_body
+from data.organizations_data import add_in_organizations_body, get_test_organization_body
 from helpers.decorators import api_error_handler, retry
 from services.http_client import HttpClient
 from services.utils import safe_json, total_log_in_method
@@ -25,7 +25,7 @@ class ApiOrganizationsService:
             "POST",
             "/api/orgs",
             auth=auth or settings.BASIC_AUTH,
-            json=body or test_organizations_body,
+            json=body or get_test_organization_body(),
             headers={"Content-Type": "application/json"},
         )
         total_log_in_method(response)
