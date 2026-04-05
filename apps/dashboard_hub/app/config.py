@@ -38,6 +38,7 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "120"))
+DASHBOARD_EXISTS_CACHE_TTL_SECONDS = int(os.getenv("DASHBOARD_EXISTS_CACHE_TTL_SECONDS", "30"))
 
 AI_ENABLED = _get_bool("AI_ENABLED", "false")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")

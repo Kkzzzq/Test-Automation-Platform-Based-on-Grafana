@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.agent_log import clear_request_context, read_logs, record_event, set_request_context
 from app.config import demo_fault_enabled
 from app.crud import (
+    DashboardLookupUnavailableError,
     create_share_link,
     create_subscription,
     dashboard_exists,
@@ -109,9 +110,23 @@ def agent_logs(replay_id: str | None = Query(default=None), limit: int = Query(d
     return {"items": read_logs(replay_id=replay_id, limit=limit)}
 
 
+def _require_dashboard_exists(dashboard_uid: str) -> None:
+    try:
+        exists = dashboard_exists(dashboard_uid)
+    except DashboardLookupUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="grafana lookup unavailable") from exc
+
+    if not exists:
+        raise HTTPException(status_code=404, detail="dashboard not found")
+
+
 @app.post("/api/v1/subscriptions", response_model=SubscriptionOut, status_code=status.HTTP_201_CREATED)
 def create_subscription_api(payload: SubscriptionCreate, db: Session = Depends(get_db)):
-    exists = dashboard_exists(payload.dashboard_uid)
+    try:
+        exists = dashboard_exists(payload.dashboard_uid)
+    except DashboardLookupUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="grafana lookup unavailable") from exc
+
     if not exists and not demo_fault_enabled("unknown_dashboard_bypass"):
         record_event(
             "subscription_unknown_dashboard_rejected",
@@ -135,8 +150,7 @@ def create_subscription_api(payload: SubscriptionCreate, db: Session = Depends(g
 
 @app.get("/api/v1/dashboards/{dashboard_uid}/subscriptions", response_model=SubscriptionsListOut)
 def list_subscriptions_api(dashboard_uid: str, db: Session = Depends(get_db)):
-    if not dashboard_exists(dashboard_uid):
-        raise HTTPException(status_code=404, detail="dashboard not found")
+    _require_dashboard_exists(dashboard_uid)
     return list_subscriptions(db, dashboard_uid)
 
 
@@ -150,8 +164,7 @@ def delete_subscription_api(subscription_id: int, db: Session = Depends(get_db))
 
 @app.post("/api/v1/share-links", response_model=ShareLinkOut, status_code=status.HTTP_201_CREATED)
 def create_share_link_api(payload: ShareLinkCreate, db: Session = Depends(get_db)):
-    if not dashboard_exists(payload.dashboard_uid):
-        raise HTTPException(status_code=404, detail="dashboard not found")
+    _require_dashboard_exists(payload.dashboard_uid)
     return create_share_link(db, payload.dashboard_uid, payload.expire_at)
 
 

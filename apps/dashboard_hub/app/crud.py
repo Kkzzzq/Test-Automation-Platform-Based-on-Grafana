@@ -21,6 +21,7 @@ from app.config import (
     AI_PROMPT_VERSION,
     AI_PROVIDER,
     CACHE_TTL_SECONDS,
+    DASHBOARD_EXISTS_CACHE_TTL_SECONDS,
     GRAFANA_ADMIN_PASSWORD,
     GRAFANA_ADMIN_USER,
     GRAFANA_BASE_URL,
@@ -46,12 +47,16 @@ from app.models import ShareLink, Subscription
 _GRAFANA_DASHBOARD_TIMEOUT_SECONDS = 10
 
 
+class DashboardLookupUnavailableError(RuntimeError):
+    """Raised when Dashboard Hub cannot determine dashboard existence because Grafana is unavailable."""
+
+
 def _cache_get_json(cache_name: str, key: str):
     with observe_histogram(CACHE_OPERATION_LATENCY, "get", cache_name):
         return cache.get_json(key)
 
 
-def _cache_set_json(cache_name: str, key: str, value: dict, ex: int | None = None):
+def _cache_set_json(cache_name: str, key: str, value: dict | bool, ex: int | None = None):
     with observe_histogram(CACHE_OPERATION_LATENCY, "set", cache_name):
         cache.set_json(key, value, ex=ex)
 
@@ -83,8 +88,29 @@ def _fetch_grafana_dashboard_response(dashboard_uid: str):
     return response
 
 
+def _dashboard_exists_cache_key(dashboard_uid: str) -> str:
+    return f"dashhub:dashboard_exists:{dashboard_uid}"
+
+
 def dashboard_exists(dashboard_uid: str) -> bool:
-    record_event("dashboard_lookup_started", dashboard_uid=dashboard_uid)
+    cache_key = _dashboard_exists_cache_key(dashboard_uid)
+    record_event("dashboard_lookup_started", dashboard_uid=dashboard_uid, cache_key=cache_key)
+
+    cached = _cache_get_json("dashboard_exists", cache_key)
+    if cached is not None:
+        CACHE_HIT_COUNT.labels(cache_name="dashboard_exists").inc()
+        exists = bool(cached)
+        record_event(
+            "dashboard_lookup_cache_hit",
+            dashboard_uid=dashboard_uid,
+            cache_key=cache_key,
+            exists=exists,
+        )
+        return exists
+
+    CACHE_MISS_COUNT.labels(cache_name="dashboard_exists").inc()
+    record_event("dashboard_lookup_cache_miss", dashboard_uid=dashboard_uid, cache_key=cache_key)
+
     try:
         response = _fetch_grafana_dashboard_response(dashboard_uid)
     except requests.RequestException as exc:
@@ -94,12 +120,29 @@ def dashboard_exists(dashboard_uid: str) -> bool:
             error_class=exc.__class__.__name__,
             error=str(exc),
         )
-        return False
+        raise DashboardLookupUnavailableError("grafana dashboard lookup failed") from exc
+
+    if response.status_code >= 500:
+        record_event(
+            "dashboard_lookup_upstream_failed",
+            dashboard_uid=dashboard_uid,
+            status_code=response.status_code,
+        )
+        raise DashboardLookupUnavailableError(
+            f"grafana dashboard lookup returned status {response.status_code}"
+        )
 
     exists = response.status_code == 200
+    _cache_set_json(
+        "dashboard_exists",
+        cache_key,
+        exists,
+        ex=DASHBOARD_EXISTS_CACHE_TTL_SECONDS,
+    )
     record_event(
         "dashboard_lookup_finished",
         dashboard_uid=dashboard_uid,
+        cache_key=cache_key,
         status_code=response.status_code,
         exists=exists,
     )
@@ -184,54 +227,61 @@ def fetch_dashboard_context(dashboard_uid: str) -> dict | None:
         )
         return None
 
-    meta = payload.get("meta", {})
-    dashboard = payload.get("dashboard", {})
-    raw_panels = dashboard.get("panels", [])
+    dashboard = payload.get("dashboard") or {}
+    meta = payload.get("meta") or {}
+    panels = _extract_panel_titles(dashboard.get("panels"))
+    panel_payloads = _extract_panel_payloads(dashboard.get("panels"))
+
+    context = {
+        "dashboard_uid": dashboard_uid,
+        "title": dashboard.get("title") or dashboard_uid,
+        "url": meta.get("url") or f"/d/{dashboard_uid}",
+        "panels": panels,
+        "panel_payloads": panel_payloads,
+    }
     record_event(
         "summary_dashboard_context_fetch_finished",
         dashboard_uid=dashboard_uid,
-        panel_count=len(_flatten_panels(raw_panels)),
-        tag_count=len(dashboard.get("tags", [])),
+        title=context["title"],
+        panel_count=len(panels),
     )
-    return {
-        "dashboard_uid": dashboard_uid,
-        "title": dashboard.get("title", ""),
-        "url": meta.get("url"),
-        "tags": dashboard.get("tags", []),
-        "panels": _extract_panel_titles(raw_panels),
-        "panel_payloads": _extract_panel_payloads(raw_panels),
-    }
+    return context
 
 
 def build_fallback_summary(title: str, panels: list[str]) -> str:
-    safe_title = title or "未命名 dashboard"
-    if panels:
-        focus = "、".join(panels[:3])
-        return f"{safe_title}，主要关注{focus}。"
-    return f"{safe_title}，用于展示相关监控信息。"
+    panel_text = "、".join(panels[:3]) if panels else "暂无面板信息"
+    if len(panels) > 3:
+        panel_text += " 等"
+    return f"Dashboard《{title}》当前包含 {len(panels)} 个面板，核心内容包括：{panel_text}。"
 
 
 def _summary_cache_key(dashboard_uid: str) -> str:
     return f"dashhub:summary:{dashboard_uid}:{AI_PROVIDER}:{AI_MODEL}:{AI_PROMPT_VERSION}"
 
 
-def _share_link_payload(row: ShareLink) -> dict:
+def _build_ai_messages(title: str, panel_payloads: list[dict[str, Any]]) -> list[dict[str, str]]:
+    system_prompt = (
+        "你是一个 Grafana Dashboard 摘要助手。"
+        "请基于提供的 dashboard 标题与面板信息，用中文输出简洁、客观、适合测试场景展示的摘要。"
+        f"输出不要超过 {120} 个字。"
+    )
+    user_payload = {
+        "title": title,
+        "panels": panel_payloads,
+    }
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+    ]
+
+
+def _share_link_payload(row: ShareLink) -> dict[str, Any]:
     return {
-        "id": row.id,
         "dashboard_uid": row.dashboard_uid,
         "token": row.token,
         "expire_at": row.expire_at.isoformat() if row.expire_at else None,
         "view_count": row.view_count,
-        "created_at": row.created_at.isoformat(),
     }
-
-
-def _is_expired(expire_at: datetime | None) -> bool:
-    if expire_at is None:
-        return False
-    if expire_at.tzinfo is None:
-        expire_at = expire_at.replace(tzinfo=timezone.utc)
-    return expire_at < datetime.now(timezone.utc)
 
 
 def _parse_expire_at(value: str | None) -> datetime | None:
@@ -241,6 +291,10 @@ def _parse_expire_at(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _is_expired(expire_at: datetime | None) -> bool:
+    return expire_at is not None and expire_at <= datetime.now(timezone.utc)
 
 
 def create_subscription(db: Session, dashboard_uid: str, user_login: str, channel: str, cron: str):
@@ -518,36 +572,36 @@ def get_dashboard_summary(dashboard_uid: str):
     }
 
     if AI_ENABLED and AI_API_KEY:
+        client = AIClient()
         try:
             record_event(
                 "summary_ai_request_started",
                 dashboard_uid=dashboard_uid,
                 provider=AI_PROVIDER,
                 model=AI_MODEL,
-                panel_count=len(context["panel_payloads"]),
             )
-            ai_result = AIClient().summarize_dashboard(
-                title=context["title"],
-                tags=context["tags"],
-                panel_titles=context["panels"],
-                panel_payloads=context["panel_payloads"],
+            ai_result = client.chat(
+                messages=_build_ai_messages(context["title"], context["panel_payloads"]),
+                timeout_seconds=20,
+                max_summary_chars=120,
             )
-            payload["ai_summary"] = ai_result["ai_summary"]
-            payload["provider"] = ai_result["provider"]
-            payload["model"] = ai_result["model"]
-            payload["prompt_version"] = ai_result["prompt_version"]
-            payload["source"] = "ai"
+            if ai_result.get("ai_summary"):
+                payload["ai_summary"] = ai_result["ai_summary"]
+                payload["source"] = "ai"
             record_event(
                 "summary_ai_request_finished",
                 dashboard_uid=dashboard_uid,
-                provider=payload["provider"],
-                model=payload["model"],
-                prompt_version=payload["prompt_version"],
+                provider=AI_PROVIDER,
+                model=AI_MODEL,
+                source=payload["source"],
             )
         except AIClientError as exc:
             record_event(
                 "summary_ai_request_failed",
                 dashboard_uid=dashboard_uid,
+                provider=AI_PROVIDER,
+                model=AI_MODEL,
+                error_class=exc.__class__.__name__,
                 error=str(exc),
             )
 
