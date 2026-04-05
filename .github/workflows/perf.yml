@@ -220,10 +220,28 @@ jobs:
           grafana_health_file="perf-results/grafana-health-response.json"
           dashboard_hub_health_file="perf-results/dashboard-hub-health-response.json"
 
+          health_json_ok() {
+            local health_file="$1"
+            "$PYTHON_BIN" - "$health_file" <<'PY2'
+            import json
+            import sys
+            from pathlib import Path
+
+            health_file = Path(sys.argv[1])
+            try:
+                payload = json.loads(health_file.read_text(encoding="utf-8"))
+            except Exception:
+                raise SystemExit(1)
+
+            values = {str(value).strip().lower() for value in payload.values() if value is not None}
+            raise SystemExit(0 if {"ok", "healthy"} & values else 1)
+            PY2
+          }
+
           for i in $(seq 1 "$SERVICE_WAIT_ATTEMPTS"); do
             status=0
             curl -fsS http://localhost:3000/api/health -o "$grafana_health_file" || status=$?
-            if [ "$status" -eq 0 ] && grep -q '"database":"ok"\|"status":"ok"' "$grafana_health_file"; then
+            if [ "$status" -eq 0 ] && health_json_ok "$grafana_health_file"; then
               echo "Grafana is ready" | tee -a perf-results/service-wait.log
               break
             fi
@@ -240,7 +258,7 @@ jobs:
           for i in $(seq 1 "$SERVICE_WAIT_ATTEMPTS"); do
             status=0
             curl -fsS http://localhost:8000/health -o "$dashboard_hub_health_file" || status=$?
-            if [ "$status" -eq 0 ] && grep -q '"status":"healthy"\|"database":"healthy"\|"status":"ok"' "$dashboard_hub_health_file"; then
+            if [ "$status" -eq 0 ] && health_json_ok "$dashboard_hub_health_file"; then
               echo "Dashboard Hub is ready" | tee -a perf-results/service-wait.log
               break
             fi
