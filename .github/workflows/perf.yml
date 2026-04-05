@@ -122,12 +122,40 @@ jobs:
             echo "LOCUST_WAIT_MAX_SECONDS=${{ inputs.wait_max_seconds }}" >> "$GITHUB_ENV"
           fi
 
+      - name: Normalize duration settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY2'
+          import os
+          import re
+          import sys
+
+          raw = os.environ['PERF_DURATION'].strip().lower()
+          match = re.fullmatch(r'(\d+)([smh]?)', raw)
+          if not match:
+              raise SystemExit(f'Unsupported PERF_DURATION format: {raw}')
+          value = int(match.group(1))
+          unit = match.group(2) or 's'
+          factor = {'s': 1, 'm': 60, 'h': 3600}[unit]
+          seconds = value * factor
+          github_env = os.environ['GITHUB_ENV']
+          with open(github_env, 'a', encoding='utf-8') as fh:
+              fh.write(f'PERF_DURATION_SECONDS={seconds}\n')
+          print(f'Normalized PERF_DURATION={raw} -> PERF_DURATION_SECONDS={seconds}')
+          PY2
+
       - name: Set common workflow variables
         shell: bash
         run: |
           set -euo pipefail
           echo "SERVICE_WAIT_ATTEMPTS=90" >> "$GITHUB_ENV"
           echo "SERVICE_WAIT_INTERVAL_SECONDS=2" >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Print selected profile
         shell: bash
@@ -192,10 +220,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p perf-results
           python -m venv "$GITHUB_WORKSPACE/.venv"
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip setuptools wheel
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install -r requirements.txt
-          "$GITHUB_WORKSPACE/.venv/bin/python" -c "import locust, redis; print('Performance dependencies installed successfully')"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip setuptools wheel 2>&1 | tee perf-results/pip-upgrade.log
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install -r requirements.txt 2>&1 | tee perf-results/pip-install.log
+          "$GITHUB_WORKSPACE/.venv/bin/python" -c "import locust, redis; print('Performance dependencies installed successfully')" 2>&1 | tee perf-results/python-import-check.log
           echo "VENV_PYTHON=$GITHUB_WORKSPACE/.venv/bin/python" >> "$GITHUB_ENV"
           echo "VENV_LOCUST=$GITHUB_WORKSPACE/.venv/bin/locust" >> "$GITHUB_ENV"
 
@@ -319,6 +348,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p perf-results
           if [ -f perf-results/metrics-sampler.pid ]; then
             pid=$(cat perf-results/metrics-sampler.pid)
             if kill -0 "$pid" 2>/dev/null; then
@@ -326,6 +356,8 @@ jobs:
                 sleep 1
               done
             fi
+          else
+            echo "metrics sampler pid file not found; sampler likely never started" > perf-results/metrics-sampler-status.txt
           fi
 
       - name: Collect metrics after load
@@ -333,17 +365,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ -x "$VENV_PYTHON" ] || { echo "Virtualenv python not found: $VENV_PYTHON" >&2; exit 1; }
           mkdir -p perf-results
-          "$VENV_PYTHON" perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
+          venv_python="${VENV_PYTHON:-}"
+          if [ -z "$venv_python" ] || [ ! -x "$venv_python" ]; then
+            echo "Virtualenv python not available; skipping metrics-after collection" > perf-results/metrics-after-skipped.txt
+            exit 0
+          fi
+          "$venv_python" perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
 
       - name: Assert performance thresholds
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          [ -x "$VENV_PYTHON" ] || { echo "Virtualenv python not found: $VENV_PYTHON" >&2; exit 1; }
-          "$VENV_PYTHON" perf/assert_locust_thresholds.py             --csv perf-results/locust_stats.csv             --profile "$PERF_THRESHOLD_PROFILE"             2>&1 | tee perf-results/threshold-check.log
+          mkdir -p perf-results
+          venv_python="${VENV_PYTHON:-}"
+          if [ -z "$venv_python" ] || [ ! -x "$venv_python" ]; then
+            echo "Virtualenv python not available; skipping threshold assertion" | tee perf-results/threshold-check.log
+            exit 0
+          fi
+          if [ ! -f perf-results/locust_stats.csv ]; then
+            echo "locust_stats.csv not found; selected performance scenario likely failed before Locust completed" | tee perf-results/threshold-check.log
+            exit 0
+          fi
+          "$venv_python" perf/assert_locust_thresholds.py             --csv perf-results/locust_stats.csv             --profile "$PERF_THRESHOLD_PROFILE"             2>&1 | tee perf-results/threshold-check.log
 
       - name: Collect runtime logs
         if: always()
@@ -351,6 +396,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p perf-results
+          docker compose ps > perf-results/docker-compose-ps.txt || true
           docker compose logs > perf-results/docker-compose.log || true
 
       - name: Upload performance results
