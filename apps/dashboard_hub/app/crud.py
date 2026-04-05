@@ -97,16 +97,22 @@ def dashboard_exists(dashboard_uid: str) -> bool:
     record_event("dashboard_lookup_started", dashboard_uid=dashboard_uid, cache_key=cache_key)
 
     cached = _cache_get_json("dashboard_exists", cache_key)
-    if cached is not None:
+    if cached is True:
         CACHE_HIT_COUNT.labels(cache_name="dashboard_exists").inc()
-        exists = bool(cached)
         record_event(
             "dashboard_lookup_cache_hit",
             dashboard_uid=dashboard_uid,
             cache_key=cache_key,
-            exists=exists,
+            exists=True,
         )
-        return exists
+        return True
+    if cached is False:
+        _cache_delete("dashboard_exists", cache_key)
+        record_event(
+            "dashboard_lookup_negative_cache_ignored",
+            dashboard_uid=dashboard_uid,
+            cache_key=cache_key,
+        )
 
     CACHE_MISS_COUNT.labels(cache_name="dashboard_exists").inc()
     record_event("dashboard_lookup_cache_miss", dashboard_uid=dashboard_uid, cache_key=cache_key)
@@ -133,12 +139,13 @@ def dashboard_exists(dashboard_uid: str) -> bool:
         )
 
     exists = response.status_code == 200
-    _cache_set_json(
-        "dashboard_exists",
-        cache_key,
-        exists,
-        ex=DASHBOARD_EXISTS_CACHE_TTL_SECONDS,
-    )
+    if exists:
+        _cache_set_json(
+            "dashboard_exists",
+            cache_key,
+            True,
+            ex=DASHBOARD_EXISTS_CACHE_TTL_SECONDS,
+        )
     record_event(
         "dashboard_lookup_finished",
         dashboard_uid=dashboard_uid,
