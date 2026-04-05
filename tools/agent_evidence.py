@@ -21,9 +21,19 @@ _DROP = object()
 RELEVANT_METRIC_PREFIXES = (
     "dashboard_hub_requests_total",
     "dashboard_hub_request_latency_seconds_count",
+    "dashboard_hub_request_exceptions_total",
+    "dashboard_hub_requests_in_progress",
     "dashboard_hub_cache_hit_total",
     "dashboard_hub_cache_miss_total",
     "dashboard_hub_summary_source_total",
+    "dashboard_hub_grafana_requests_total",
+    "dashboard_hub_grafana_request_latency_seconds_count",
+    "dashboard_hub_grafana_request_failures_total",
+    "dashboard_hub_db_operation_latency_seconds_count",
+    "dashboard_hub_cache_operation_latency_seconds_count",
+    "dashboard_hub_subscription_conflicts_total",
+    "dashboard_hub_share_link_expired_total",
+    "dashboard_hub_cache_invalidations_total",
 )
 
 def _serialize(value: Any) -> Any:
