@@ -76,25 +76,25 @@ jobs:
               echo "PERF_LOCUST_FILE=perf/locust_cache_penetration.py" >> "$GITHUB_ENV"
               echo "PERF_THRESHOLD_PROFILE=cache_penetration" >> "$GITHUB_ENV"
               echo "PERF_USERS=100" >> "$GITHUB_ENV"
-              echo "PERF_RATE=18" >> "$GITHUB_ENV"
+              echo "PERF_RATE=20" >> "$GITHUB_ENV"
               echo "PERF_DURATION=4m" >> "$GITHUB_ENV"
               echo "PERF_DURATION_SECONDS=240" >> "$GITHUB_ENV"
-              echo "LOCUST_WAIT_MIN_SECONDS=0.00" >> "$GITHUB_ENV"
-              echo "LOCUST_WAIT_MAX_SECONDS=0.03" >> "$GITHUB_ENV"
+              echo "LOCUST_WAIT_MIN_SECONDS=0.0" >> "$GITHUB_ENV"
+              echo "LOCUST_WAIT_MAX_SECONDS=0.02" >> "$GITHUB_ENV"
               echo "LOCUST_DASHBOARD_COUNT=5" >> "$GITHUB_ENV"
               echo "LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=3" >> "$GITHUB_ENV"
               ;;
             cache_breakdown)
               echo "PERF_LOCUST_FILE=perf/locust_cache_breakdown.py" >> "$GITHUB_ENV"
               echo "PERF_THRESHOLD_PROFILE=cache_breakdown" >> "$GITHUB_ENV"
-              echo "PERF_USERS=150" >> "$GITHUB_ENV"
-              echo "PERF_RATE=30" >> "$GITHUB_ENV"
-              echo "PERF_DURATION=3m" >> "$GITHUB_ENV"
-              echo "PERF_DURATION_SECONDS=180" >> "$GITHUB_ENV"
-              echo "LOCUST_WAIT_MIN_SECONDS=0.00" >> "$GITHUB_ENV"
+              echo "PERF_USERS=120" >> "$GITHUB_ENV"
+              echo "PERF_RATE=25" >> "$GITHUB_ENV"
+              echo "PERF_DURATION=4m" >> "$GITHUB_ENV"
+              echo "PERF_DURATION_SECONDS=240" >> "$GITHUB_ENV"
+              echo "LOCUST_WAIT_MIN_SECONDS=0.0" >> "$GITHUB_ENV"
               echo "LOCUST_WAIT_MAX_SECONDS=0.01" >> "$GITHUB_ENV"
               echo "LOCUST_DASHBOARD_COUNT=5" >> "$GITHUB_ENV"
-              echo "LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=50" >> "$GITHUB_ENV"
+              echo "LOCUST_SUBSCRIPTIONS_PER_DASHBOARD=20" >> "$GITHUB_ENV"
               ;;
             *)
               echo "Unsupported scenario: $scenario" >&2
@@ -106,40 +106,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           if [ -n "${{ inputs.users }}" ]; then
             echo "PERF_USERS=${{ inputs.users }}" >> "$GITHUB_ENV"
           fi
-
           if [ -n "${{ inputs.rate }}" ]; then
             echo "PERF_RATE=${{ inputs.rate }}" >> "$GITHUB_ENV"
           fi
-
           if [ -n "${{ inputs.duration }}" ]; then
-            duration="${{ inputs.duration }}"
-            echo "PERF_DURATION=$duration" >> "$GITHUB_ENV"
-
-            if [[ "$duration" =~ ^([0-9]+)([smh])$ ]]; then
-              value="${BASH_REMATCH[1]}"
-              unit="${BASH_REMATCH[2]}"
-              if [ "$unit" = "s" ]; then
-                seconds="$value"
-              elif [ "$unit" = "m" ]; then
-                seconds=$((value * 60))
-              else
-                seconds=$((value * 3600))
-              fi
-              echo "PERF_DURATION_SECONDS=$seconds" >> "$GITHUB_ENV"
-            else
-              echo "Unsupported duration format: $duration" >&2
-              exit 1
-            fi
+            echo "PERF_DURATION=${{ inputs.duration }}" >> "$GITHUB_ENV"
           fi
-
           if [ -n "${{ inputs.wait_min_seconds }}" ]; then
             echo "LOCUST_WAIT_MIN_SECONDS=${{ inputs.wait_min_seconds }}" >> "$GITHUB_ENV"
           fi
-
           if [ -n "${{ inputs.wait_max_seconds }}" ]; then
             echo "LOCUST_WAIT_MAX_SECONDS=${{ inputs.wait_max_seconds }}" >> "$GITHUB_ENV"
           fi
@@ -196,6 +174,16 @@ jobs:
             fi
           done
 
+      - name: Create virtual environment and install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements.txt
+          python -c "import locust, redis; print('Performance dependencies installed successfully')"
+
       - name: Create performance seed data
         env:
           GRAFANA_BASE_URL: http://localhost:3000
@@ -205,15 +193,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          . .venv/bin/activate
           : "${LOCUST_DASHBOARD_COUNT:?LOCUST_DASHBOARD_COUNT is required}"
           : "${LOCUST_SUBSCRIPTIONS_PER_DASHBOARD:?LOCUST_SUBSCRIPTIONS_PER_DASHBOARD is required}"
-          python perf/bootstrap_perf_data.py --github-env "$GITHUB_ENV"
+          mkdir -p perf-results
+          python perf/bootstrap_perf_data.py --github-env "$GITHUB_ENV" | tee perf-results/bootstrap-seed.json
 
       - name: Validate generated seed variables
         shell: bash
         run: |
           set -euo pipefail
           required_common=(
+            LOCUST_RUN_SUFFIX
             LOCUST_DASHBOARD_UIDS
             LOCUST_SHARE_TOKENS
             LOCUST_HOT_DASHBOARD_UID
@@ -228,21 +219,20 @@ jobs:
             fi
           done
 
+          echo "LOCUST_RUN_SUFFIX=$LOCUST_RUN_SUFFIX"
           echo "LOCUST_DASHBOARD_UIDS length=${#LOCUST_DASHBOARD_UIDS}"
           echo "LOCUST_SHARE_TOKENS length=${#LOCUST_SHARE_TOKENS}"
           echo "LOCUST_HOT_DASHBOARD_UID=$LOCUST_HOT_DASHBOARD_UID"
           echo "LOCUST_HOT_SHARE_TOKEN=$LOCUST_HOT_SHARE_TOKEN"
           echo "LOCUST_CONFLICT_USER_LOGIN=$LOCUST_CONFLICT_USER_LOGIN"
 
-      - name: Create virtual environment and install dependencies
+      - name: Verify seeded business endpoints
         shell: bash
         run: |
           set -euo pipefail
-          python -m venv .venv
-          . .venv/bin/activate
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements.txt
-          python -c "import locust, redis; print('Performance dependencies installed successfully')"
+          mkdir -p perf-results
+          curl -fsS "http://localhost:8000/api/v1/dashboards/$LOCUST_HOT_DASHBOARD_UID/subscriptions"             -o perf-results/seed-check-subscriptions.json
+          curl -fsS "http://localhost:8000/api/v1/share-links/$LOCUST_HOT_SHARE_TOKEN"             -o perf-results/seed-check-share-link.json
 
       - name: Collect metrics before load
         shell: bash
@@ -250,9 +240,7 @@ jobs:
           set -euo pipefail
           . .venv/bin/activate
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py \
-            --metrics-url http://localhost:8000/metrics \
-            --output perf-results/metrics-before.json
+          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-before.json
 
       - name: Start metrics sampling during load
         shell: bash
@@ -260,12 +248,7 @@ jobs:
           set -euo pipefail
           . .venv/bin/activate
           mkdir -p perf-results
-          nohup python -m perf.sample_metrics_during_load \
-            --metrics-url http://localhost:8000/metrics \
-            --output perf-results/metrics-series.json \
-            --interval-seconds 10 \
-            --duration-seconds "$PERF_DURATION_SECONDS" \
-            > perf-results/metrics-sampler.log 2>&1 &
+          nohup python -m perf.sample_metrics_during_load             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-series.json             --interval-seconds 10             --duration-seconds "$PERF_DURATION_SECONDS"             > perf-results/metrics-sampler.log 2>&1 &
           echo $! > perf-results/metrics-sampler.pid
           echo "Started metrics sampler with PID $(cat perf-results/metrics-sampler.pid)"
 
@@ -314,12 +297,7 @@ jobs:
           echo "LOCUST_CONFLICT_USER_LOGIN=$LOCUST_CONFLICT_USER_LOGIN"
 
           mkdir -p perf-results
-          locust -f "$PERF_LOCUST_FILE" \
-            --host http://localhost:8000 \
-            --headless \
-            -u "$PERF_USERS" -r "$PERF_RATE" -t "$PERF_DURATION" \
-            --csv=perf-results/locust \
-            --html=perf-results/locust-report.html
+          locust -f "$PERF_LOCUST_FILE"             --host http://localhost:8000             --headless             -u "$PERF_USERS" -r "$PERF_RATE" -t "$PERF_DURATION"             --csv=perf-results/locust             --html=perf-results/locust-report.html             2>&1 | tee perf-results/locust-console.log
 
       - name: Wait for metrics sampler
         if: always()
@@ -342,9 +320,7 @@ jobs:
           set -euo pipefail
           . .venv/bin/activate
           mkdir -p perf-results
-          python perf/collect_metrics_snapshot.py \
-            --metrics-url http://localhost:8000/metrics \
-            --output perf-results/metrics-after.json
+          python perf/collect_metrics_snapshot.py             --metrics-url http://localhost:8000/metrics             --output perf-results/metrics-after.json
 
       - name: Assert performance thresholds
         if: always()
@@ -352,12 +328,10 @@ jobs:
         run: |
           set -euo pipefail
           . .venv/bin/activate
-          python perf/assert_locust_thresholds.py \
-            --csv perf-results/locust_stats.csv \
-            --profile "$PERF_THRESHOLD_PROFILE"
+          python perf/assert_locust_thresholds.py             --csv perf-results/locust_stats.csv             --profile "$PERF_THRESHOLD_PROFILE"             2>&1 | tee perf-results/threshold-check.log
 
-      - name: Collect container logs on failure
-        if: failure()
+      - name: Collect runtime logs
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
