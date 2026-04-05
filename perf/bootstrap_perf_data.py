@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 
 def _basic_auth_header(username: str, password: str) -> str:
@@ -22,8 +24,16 @@ def _request_json(
 ):
     data = json.dumps(payload).encode('utf-8') if payload is not None else None
     request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return json.loads(response.read().decode('utf-8'))
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='replace')
+        raise RuntimeError(
+            f'HTTP {exc.code} calling {method} {url}: {body[:400]}'
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f'Failed to call {method} {url}: {exc.reason}') from exc
 
 
 def create_perf_seed_data(
@@ -33,6 +43,7 @@ def create_perf_seed_data(
     subscriptions_per_dashboard: int,
     admin_user: str,
     admin_password: str,
+    run_suffix: str,
 ):
     dashboard_uids: list[str] = []
     share_tokens: list[str] = []
@@ -43,8 +54,8 @@ def create_perf_seed_data(
         dashboard_payload = {
             'dashboard': {
                 'id': None,
-                'uid': f'locust-dashboard-{index}',
-                'title': f'Locust Dashboard {index}',
+                'uid': f'locust-dashboard-{run_suffix}-{index}',
+                'title': f'Locust Dashboard {run_suffix}-{index}',
                 'timezone': 'browser',
                 'schemaVersion': 39,
                 'version': 0,
@@ -86,7 +97,7 @@ def create_perf_seed_data(
                 headers={'Content-Type': 'application/json'},
                 payload={
                     'dashboard_uid': dashboard_uid,
-                    'user_login': f'perf_seed_user_{index}_{subscription_index}',
+                    'user_login': f'perf_seed_user_{run_suffix}_{index}_{subscription_index}',
                     'channel': 'email',
                     'cron': '0 */6 * * *',
                 },
@@ -123,6 +134,8 @@ def main() -> int:
     parser.add_argument('--github-env', default=os.getenv('GITHUB_ENV'))
     args = parser.parse_args()
 
+    run_suffix = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S') + '-' + uuid4().hex[:6]
+
     dashboard_uids, share_tokens, hot_dashboard_uid, hot_share_token = create_perf_seed_data(
         grafana_base_url=args.grafana_base_url,
         dashboard_hub_base_url=args.dashboard_hub_base_url,
@@ -130,14 +143,16 @@ def main() -> int:
         subscriptions_per_dashboard=args.subscriptions_per_dashboard,
         admin_user=args.admin_user,
         admin_password=args.admin_password,
+        run_suffix=run_suffix,
     )
 
     result = {
+        'LOCUST_RUN_SUFFIX': run_suffix,
         'LOCUST_DASHBOARD_UIDS': ','.join(dashboard_uids),
         'LOCUST_SHARE_TOKENS': ','.join(share_tokens),
         'LOCUST_HOT_DASHBOARD_UID': hot_dashboard_uid,
         'LOCUST_HOT_SHARE_TOKEN': hot_share_token,
-        'LOCUST_CONFLICT_USER_LOGIN': 'locust_conflict_user',
+        'LOCUST_CONFLICT_USER_LOGIN': f'locust_conflict_user_{run_suffix}',
     }
 
     if args.github_env:
