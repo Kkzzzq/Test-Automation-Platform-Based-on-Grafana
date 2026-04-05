@@ -485,6 +485,28 @@ jobs:
             --profile "$PERF_THRESHOLD_PROFILE" \
             2>&1 | tee perf-results/threshold-check.log
 
+      - name: Assert business signals
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          venv_python="${VENV_PYTHON:-$GITHUB_WORKSPACE/.venv/bin/python}"
+          if [ ! -x "$venv_python" ]; then
+            echo "Virtualenv python not available; skipping business-signal assertion" | tee perf-results/business-signals-check.log
+            exit 0
+          fi
+          if [ ! -f perf-results/metrics-before.json ] || [ ! -f perf-results/metrics-after.json ]; then
+            echo "metrics-before.json or metrics-after.json not found; skipping business-signal assertion" | tee perf-results/business-signals-check.log
+            exit 0
+          fi
+          "$venv_python" perf/assert_business_signals.py \
+            --before perf-results/metrics-before.json \
+            --after perf-results/metrics-after.json \
+            --profile "$PERF_THRESHOLD_PROFILE" \
+            --summary-output perf-results/business-signals-summary.json \
+            2>&1 | tee perf-results/business-signals-check.log
+
       - name: Collect runtime logs
         if: always()
         shell: bash
