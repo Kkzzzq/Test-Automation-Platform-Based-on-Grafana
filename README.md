@@ -58,8 +58,9 @@ Dashboard 摘要能力支持两种输出方式：
 - 读取分享链接
 - 正常创建订阅
 - 重复创建订阅冲突场景
-- 不存在资源读取（缓存穿透）
-- 热点 key 高频读取（缓存击穿）
+- 不存在 key / 不存在 dashboard 读取（缓存穿透）
+- 单热点 key 高频读取并反复失效（缓存击穿）
+- 多组热点 key 批量失效 / 同时过期（缓存雪崩）
 
 配合 Prometheus 暴露的指标，可观察：
 
@@ -287,6 +288,7 @@ python perf/bootstrap_perf_data.py
 - `LOCUST_SHARE_TOKENS`
 - `LOCUST_HOT_DASHBOARD_UID`
 - `LOCUST_HOT_SHARE_TOKEN`
+- `LOCUST_CONFLICT_DASHBOARD_UID`
 - `LOCUST_CONFLICT_USER_LOGIN`
 
 ### 本地执行示例
@@ -316,6 +318,10 @@ locust -f perf/locust_write_conflict.py \
 ```
 
 说明：
+- `write_conflict` 场景会先对固定 dashboard + 固定 user_login + channel=email 预种一条订阅，再持续并发打同一业务键，冲突结果更稳定。
+- `cache_breakdown` 场景会按固定时间间隔反复删除单个热点 subscriptions key，持续制造“删 key → 回源 → 回填 → 再删 key”。
+- `cache_penetration` 场景持续请求不存在 token 和不存在 dashboard，重点看 404、cache miss 和 Grafana 404 回源。
+- `cache_avalanche` 场景会先预热多组热点 key，再批量删掉 dashboard_exists / subscriptions / share_link 热点缓存，模拟同批热点同时过期。
 - 当前 README 不再使用 `perf/locustfile.py`，因为仓库里实际已经拆成多个场景文件
 - 当前热点读压测主要覆盖订阅列表与分享链接，不再把摘要读取写成已覆盖场景
 
